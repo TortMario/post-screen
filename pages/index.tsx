@@ -417,6 +417,32 @@ BaseApp posts are tokens created on Base App platform. Make sure you're analyzin
           </div>
         )}
       </div>
+
+      {/* Footer with Support and Author Links */}
+      <footer className="border-t border-white/10 bg-gradient-to-r from-blue-500/5 via-purple-500/5 to-pink-500/5 backdrop-blur-md mt-12">
+        <div className="container mx-auto px-4 py-6">
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+            <a
+              href="https://donation-base.vercel.app/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 bg-gradient-to-r from-green-500/20 to-emerald-500/20 hover:from-green-500/30 hover:to-emerald-500/30 border border-green-500/50 text-green-300 font-semibold py-3 px-6 rounded-xl transition-all duration-200 hover:scale-105 hover:shadow-lg"
+            >
+              <span>💝</span>
+              <span>Support / Donate</span>
+            </a>
+            <a
+              href="https://base.app/profile/mynameisthe"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 bg-gradient-to-r from-blue-500/20 to-purple-500/20 hover:from-blue-500/30 hover:to-purple-500/30 border border-blue-500/50 text-blue-300 font-semibold py-3 px-6 rounded-xl transition-all duration-200 hover:scale-105 hover:shadow-lg"
+            >
+              <span>⭐</span>
+              <span>Leave a Review</span>
+            </a>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }
