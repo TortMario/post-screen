@@ -1,7 +1,7 @@
 {
   "buildCommand": "npm run build",
   "devCommand": "npm run dev",
-  "installCommand": "npm install",
+  "installCommand": "npm ci --ignore-scripts || npm install --ignore-scripts || (npm install --no-optional && echo 'Optional dependencies skipped')",
   "framework": "nextjs",
   "regions": ["iad1"]
 }

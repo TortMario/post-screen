@@ -20,16 +20,22 @@ A web application for analyzing investments in BaseApp posts. The app connects t
 npm install
 ```
 
-**Note**: The `canvas` library requires native dependencies. On macOS, install them via Homebrew:
+**Note**: Image generation (portfolio card) requires the `canvas` library, which is optional. The app works without it - card generation will simply be disabled.
+
+To enable card generation locally, install canvas as an optional dependency:
 
 ```bash
+# macOS - first install native dependencies via Homebrew:
 brew install pkg-config cairo pango libpng jpeg giflib librsvg
+# Then install canvas:
+npm install canvas
+
+# Linux (Ubuntu/Debian):
+sudo apt-get install build-essential libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev
+npm install canvas
 ```
 
-On Linux (Ubuntu/Debian):
-```bash
-sudo apt-get install build-essential libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev
-```
+**On Vercel**: Canvas is not available due to native dependency requirements. Card generation is automatically disabled in production.
 
 ## 🔧 Configuration
 
