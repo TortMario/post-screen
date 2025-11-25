@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import WalletConnect from '@/components/WalletConnect';
+import UserProfile from '@/components/UserProfile';
 import PortfolioCard from '@/components/PortfolioCard';
 import PostList from '@/components/PostList';
 import PortfolioChart from '@/components/PortfolioChart';
@@ -169,6 +170,12 @@ export default function Home() {
         <div className="mb-6">
           <div className="bg-gradient-to-br from-blue-500/10 via-purple-500/10 to-pink-500/10 backdrop-blur-md rounded-2xl p-6 border border-white/20 shadow-xl">
             <WalletConnect onConnect={handleWalletConnect} />
+            
+            {walletAddress && (
+              <div className="mt-4 mb-4">
+                <UserProfile address={walletAddress} />
+              </div>
+            )}
             
             {walletAddress && (
               <button
