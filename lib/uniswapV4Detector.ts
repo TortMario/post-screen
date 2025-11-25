@@ -9,6 +9,8 @@ export const UNISWAP_V4_POOL_MANAGER = '0xA5B4F34780D948b571E676C34aB709D3AcA049
 export const UNISWAP_V4_STATE_VIEW = '0x43F150e8e18cB95A0c1Fb2176A6531864d618C39' as Address;
 
 // Base App platform referrer address (official)
+// This is the address returned by platformReferrer() for tokens created via Base App
+// According to Base documentation: 0x000000000000000000000000000000000000bA5e
 export const BASE_PLATFORM_REFERRER = '0x000000000000000000000000000000000000bA5e' as Address;
 
 // Zora hook addresses for Base App coins
@@ -223,7 +225,7 @@ async function tryGetPlatformReferrer(
 
 /**
  * Check if a token is a Base App token by directly checking platformReferrer()
- * This is the fastest and most direct method according to Base documentation
+ * This is the fastest method - directly checks the token's platformReferrer()
  * Base App tokens are Zora coins with platformReferrer() == BASE_PLATFORM_REFERRER
  */
 export async function isBaseAppTokenByReferrer(
@@ -237,12 +239,17 @@ export async function isBaseAppTokenByReferrer(
   try {
     const platformReferrer = await tryGetPlatformReferrer(tokenAddress, client);
     
+    // Check if platformReferrer matches Base App referrer
     const isBaseApp = platformReferrer.toLowerCase() === BASE_PLATFORM_REFERRER.toLowerCase();
     
     if (isBaseApp) {
       console.log(`    ✓ Token ${tokenAddress} is Base App token (platformReferrer: ${platformReferrer})`);
+    } else if (platformReferrer !== '0x0000000000000000000000000000000000000000') {
+      // Token has platformReferrer but it's not Base App (might be Zora direct)
+      console.log(`    ✗ Token ${tokenAddress} is Zora coin but NOT Base App (platformReferrer: ${platformReferrer}, expected: ${BASE_PLATFORM_REFERRER})`);
     } else {
-      console.log(`    ✗ Token ${tokenAddress} is not Base App token (platformReferrer: ${platformReferrer || 'N/A'})`);
+      // Token doesn't have platformReferrer function (not a Zora coin)
+      console.log(`    ✗ Token ${tokenAddress} is not a Zora coin (no platformReferrer function)`);
     }
     
     return isBaseApp;
@@ -253,14 +260,67 @@ export async function isBaseAppTokenByReferrer(
 }
 
 /**
+ * Check if a token is a Base App token by finding its pool and checking BOTH currencies
+ * According to Base documentation, we need to check BOTH currency0 AND currency1
+ * because we don't know which one is the Base App token
+ */
+export async function isBaseAppTokenByPoolCheck(
+  tokenAddress: Address,
+  client?: ReturnType<typeof createBaseClient>
+): Promise<boolean> {
+  if (!client) {
+    client = createBaseClient();
+  }
+
+  try {
+    console.log(`    [Pool Check] Finding pool for token ${tokenAddress}...`);
+    const poolData = await findPoolForToken(tokenAddress);
+    
+    if (!poolData) {
+      console.log(`    [Pool Check] No pool found for token ${tokenAddress}`);
+      return false;
+    }
+
+    console.log(`    [Pool Check] Found pool for ${tokenAddress}:`);
+    console.log(`      - Pool ID: ${poolData.poolId}`);
+    console.log(`      - Currency0: ${poolData.currency0.symbol} (${poolData.currency0.address})`);
+    console.log(`      - Currency1: ${poolData.currency1.symbol} (${poolData.currency1.address})`);
+    console.log(`      - Coin Type: ${poolData.coinType || 'N/A'}`);
+    console.log(`      - App Type: ${poolData.appType}`);
+    console.log(`      - Liquidity: ${poolData.liquidity.toString()}`);
+
+    // Check if appType is TBA (Base App)
+    // The categorizeAppType function already checks BOTH currencies
+    const isBaseApp = poolData.appType === 'TBA';
+    
+    if (isBaseApp) {
+      console.log(`    [Pool Check] ✓ Token ${tokenAddress} is Base App token (appType: TBA)`);
+    } else {
+      console.log(`    [Pool Check] ✗ Token ${tokenAddress} is not Base App token (appType: ${poolData.appType})`);
+    }
+    
+    return isBaseApp;
+  } catch (error) {
+    console.error(`    [Pool Check] Error checking pool for token ${tokenAddress}:`, error);
+    return false;
+  }
+}
+
+/**
  * Categorize app type (Base App vs Zora) by checking platformReferrer
  * This is the correct method according to Base documentation
+ * IMPORTANT: We check BOTH currency0 AND currency1 because we don't know which is the Base App token
  */
 export async function categorizeAppType(
   currency0: Address,
   currency1: Address,
   client: ReturnType<typeof createBaseClient>
 ): Promise<'TBA' | 'ZORA'> {
+  console.log(`      [Categorize] Checking platformReferrer for both currencies in pool...`);
+  console.log(`      [Categorize] Currency0: ${currency0}`);
+  console.log(`      [Categorize] Currency1: ${currency1}`);
+  console.log(`      [Categorize] Expected BASE_PLATFORM_REFERRER: ${BASE_PLATFORM_REFERRER}`);
+  
   // Try to fetch platformReferrer() on both currencies in the Pool
   // falling back to ADDRESS_ZERO if the function does not exist (currency is not a Zora coin)
   const [currency0PlatformReferrer, currency1PlatformReferrer] = await Promise.all([
@@ -268,15 +328,26 @@ export async function categorizeAppType(
     tryGetPlatformReferrer(currency1, client),
   ]);
 
+  console.log(`      [Categorize] Currency0 platformReferrer: ${currency0PlatformReferrer}`);
+  console.log(`      [Categorize] Currency1 platformReferrer: ${currency1PlatformReferrer}`);
+
   // If either of the currencies has the Base App referrer address,
   // the coin is coming from the Base App
-  if (
-    currency0PlatformReferrer.toLowerCase() === BASE_PLATFORM_REFERRER.toLowerCase() ||
-    currency1PlatformReferrer.toLowerCase() === BASE_PLATFORM_REFERRER.toLowerCase()
-  ) {
+  const currency0IsBaseApp = currency0PlatformReferrer.toLowerCase() === BASE_PLATFORM_REFERRER.toLowerCase();
+  const currency1IsBaseApp = currency1PlatformReferrer.toLowerCase() === BASE_PLATFORM_REFERRER.toLowerCase();
+  
+  if (currency0IsBaseApp || currency1IsBaseApp) {
+    if (currency0IsBaseApp) {
+      console.log(`      [Categorize] ✓ Currency0 (${currency0}) is Base App token`);
+    }
+    if (currency1IsBaseApp) {
+      console.log(`      [Categorize] ✓ Currency1 (${currency1}) is Base App token`);
+    }
+    console.log(`      [Categorize] Result: TBA (Base App)`);
     return 'TBA';
   }
 
+  console.log(`      [Categorize] Result: ZORA (not Base App)`);
   return 'ZORA';
 }
 

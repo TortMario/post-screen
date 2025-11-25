@@ -4,7 +4,7 @@ import { PostPriceService, PriceData } from './getPostPrice';
 import { PnLCalculator, PostAnalytics, PortfolioAnalytics } from './calcPnL';
 import { BaseAppDetector } from './baseAppDetector';
 import { enrichTokensWithDexScreener } from './findTokensViaDexScreener';
-import { isBaseAppTokenByPool, isBaseAppTokenByReferrer } from './uniswapV4Detector';
+import { isBaseAppTokenByPool, isBaseAppTokenByReferrer, isBaseAppTokenByPoolCheck } from './uniswapV4Detector';
 import type { Address } from 'viem';
 
 export interface AnalysisResult {
@@ -578,27 +578,43 @@ export class AnalyticsService {
       console.log(`  Checking batch ${batchNum}/${totalBatches} (${batch.length} tokens)...`);
       
       const checkPromises = batch.map(async (token) => {
+        const tokenAddress = token.tokenAddress as Address;
+        const tokenName = token.symbol || token.tokenAddress.slice(0, 10) + '...';
+        
         try {
-          const isBaseApp = await Promise.race([
-            isBaseAppTokenByReferrer(token.tokenAddress as Address),
-            new Promise<boolean>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 10000))
-          ]);
+          // First try direct platformReferrer() check (fastest)
+          console.log(`    Checking ${tokenName} (${tokenAddress})...`);
+          let isBaseApp = false;
+          
+          try {
+            isBaseApp = await Promise.race([
+              isBaseAppTokenByReferrer(tokenAddress),
+              new Promise<boolean>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 8000))
+            ]);
+          } catch (directError: any) {
+            // If direct check fails or times out, try pool-based check
+            console.log(`    Direct check failed for ${tokenName}, trying pool-based check...`);
+            try {
+              isBaseApp = await Promise.race([
+                isBaseAppTokenByPoolCheck(tokenAddress),
+                new Promise<boolean>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 15000))
+              ]);
+            } catch (poolError: any) {
+              console.log(`    Pool check also failed for ${tokenName}: ${poolError.message}`);
+              isBaseApp = false;
+            }
+          }
           
           if (isBaseApp) {
             baseAppAddresses.add(token.tokenAddress.toLowerCase());
-            console.log(`    ✓ ${token.symbol || 'Unknown'} (${token.tokenAddress.slice(0, 10)}...) is BaseApp token`);
+            console.log(`    ✓ ${tokenName} (${token.tokenAddress.slice(0, 10)}...) is BaseApp token`);
+          } else {
+            console.log(`    ✗ ${tokenName} (${token.tokenAddress.slice(0, 10)}...) is NOT BaseApp token`);
           }
           
           return { address: token.tokenAddress, isBaseApp };
         } catch (error: any) {
-          // If platformReferrer() doesn't exist, token is not a Zora coin
-          if (error.message?.includes('function does not exist') || 
-              error.message?.includes('execution reverted') ||
-              error.message?.includes('Timeout')) {
-            // This is expected for non-Zora tokens
-            return { address: token.tokenAddress, isBaseApp: false };
-          }
-          console.log(`    ⚠ ${token.symbol || 'Unknown'} (${token.tokenAddress.slice(0, 10)}...) check failed: ${error.message}`);
+          console.log(`    ⚠ ${tokenName} check failed: ${error.message}`);
           return { address: token.tokenAddress, isBaseApp: false };
         }
       });
