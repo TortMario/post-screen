@@ -1,5 +1,6 @@
 import { ethers } from 'ethers';
-import { isBaseAppTokenByReferrer, BASE_PLATFORM_REFERRER } from './getUniswapPrice';
+import { isBaseAppTokenByPool } from './uniswapV4Detector';
+import type { Address } from 'viem';
 
 // BaseApp token fingerprint - EIP-1167 Minimal Proxy clone
 // All BaseApp tokens have identical runtime bytecode
@@ -65,28 +66,28 @@ export class BaseAppDetector {
           return false;
         }
         
-        // Additional verification: check platformReferrer if available (skip on mobile for speed)
+        // Additional verification: check platformReferrer via pool if available (skip on mobile for speed)
         const isMobile = typeof window !== 'undefined' && typeof navigator !== 'undefined' &&
                          (window.innerWidth < 768 || /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent));
         
         // Skip referrer check on mobile to speed things up - bytecode is sufficient
         if (!isMobile) {
           try {
-            const isBaseAppByReferrer = await Promise.race([
-              isBaseAppTokenByReferrer(address, this.provider),
-              new Promise<boolean>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000))
+            const isBaseAppByPool = await Promise.race([
+              isBaseAppTokenByPool(address as Address),
+              new Promise<boolean>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 10000))
             ]);
-            if (hasBaseAppBytecode && isBaseAppByReferrer) {
-              console.log(`✓ Token ${address.slice(0, 10)}... confirmed as BaseApp by both bytecode and platformReferrer`);
+            if (hasBaseAppBytecode && isBaseAppByPool) {
+              console.log(`✓ Token ${address.slice(0, 10)}... confirmed as BaseApp by both bytecode and pool platformReferrer`);
             } else if (hasBaseAppBytecode) {
-              console.log(`✓ Token ${address.slice(0, 10)}... confirmed as BaseApp by bytecode (platformReferrer check failed or not available)`);
+              console.log(`✓ Token ${address.slice(0, 10)}... confirmed as BaseApp by bytecode (pool check failed or not available)`);
             }
           } catch (error) {
-            // If referrer check fails, still trust bytecode match (bytecode is the primary indicator)
-            console.log(`✓ Token ${address.slice(0, 10)}... confirmed as BaseApp by bytecode (platformReferrer check skipped or failed)`);
+            // If pool check fails, still trust bytecode match (bytecode is the primary indicator)
+            console.log(`✓ Token ${address.slice(0, 10)}... confirmed as BaseApp by bytecode (pool check skipped or failed)`);
           }
         } else {
-          console.log(`✓ Token ${address.slice(0, 10)}... confirmed as BaseApp by bytecode (mobile - referrer check skipped)`);
+          console.log(`✓ Token ${address.slice(0, 10)}... confirmed as BaseApp by bytecode (mobile - pool check skipped)`);
         }
         
         this.codeCache.set(cacheKey, hasBaseAppBytecode);

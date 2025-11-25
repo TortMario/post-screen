@@ -4,6 +4,8 @@ import { PostPriceService, PriceData } from './getPostPrice';
 import { PnLCalculator, PostAnalytics, PortfolioAnalytics } from './calcPnL';
 import { BaseAppDetector } from './baseAppDetector';
 import { enrichTokensWithDexScreener } from './findTokensViaDexScreener';
+import { isBaseAppTokenByPool } from './uniswapV4Detector';
+import type { Address } from 'viem';
 
 export interface AnalysisResult {
   wallet: WalletData;
@@ -211,6 +213,8 @@ export class AnalyticsService {
    * Detect BaseApp tokens by checking their bytecode fingerprint
    * This is the most accurate method - all BaseApp tokens have identical bytecode
    * IMPORTANT: Only checks tokens that are already in the wallet, does NOT scan the network
+   * 
+   * Now also verifies tokens using the correct method: checking pool platformReferrer
    */
   private async detectBaseAppTokensByBytecode(tokens: TokenBalance[]): Promise<Set<string>> {
     const baseAppAddresses = new Set<string>();
@@ -225,15 +229,63 @@ export class AnalyticsService {
     const addresses = tokens.map(t => t.tokenAddress);
     const results = await this.baseAppDetector.checkMultipleTokens(addresses);
     
+    // First pass: collect tokens with BaseApp bytecode
+    const bytecodeMatches: string[] = [];
     for (const [address, isBaseApp] of results.entries()) {
       if (isBaseApp) {
-        baseAppAddresses.add(address);
-        const token = tokens.find(t => t.tokenAddress.toLowerCase() === address);
-        if (token) {
-          console.log(`✓ ${token.symbol} (${address.slice(0, 10)}...) is a BaseApp token from wallet`);
-        }
+        bytecodeMatches.push(address);
       }
     }
+    
+    console.log(`Found ${bytecodeMatches.length} tokens with BaseApp bytecode, verifying via pool platformReferrer...`);
+    
+    // Second pass: verify using pool platformReferrer (correct method from documentation)
+    // This is slower but more accurate - we verify a subset of tokens
+    const BATCH_SIZE = 3; // Verify 3 tokens at a time to avoid rate limits
+    for (let i = 0; i < bytecodeMatches.length; i += BATCH_SIZE) {
+      const batch = bytecodeMatches.slice(i, i + BATCH_SIZE);
+      console.log(`  Verifying batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(bytecodeMatches.length / BATCH_SIZE)}...`);
+      
+      const verificationPromises = batch.map(async (address) => {
+        try {
+          // Use the correct method: check pool platformReferrer
+          const isBaseAppByPool = await Promise.race([
+            isBaseAppTokenByPool(address as Address),
+            new Promise<boolean>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 15000))
+          ]);
+          
+          if (isBaseAppByPool) {
+            baseAppAddresses.add(address);
+            const token = tokens.find(t => t.tokenAddress.toLowerCase() === address);
+            if (token) {
+              console.log(`✓ ${token.symbol} (${address.slice(0, 10)}...) confirmed as BaseApp by pool platformReferrer`);
+            }
+            return true;
+          } else {
+            console.log(`⚠ ${address.slice(0, 10)}... has BaseApp bytecode but pool check failed - may not be BaseApp token`);
+            return false;
+          }
+        } catch (error) {
+          // If pool check fails, still trust bytecode match (bytecode is a strong indicator)
+          console.log(`⚠ ${address.slice(0, 10)}... pool check failed, trusting bytecode match`);
+          baseAppAddresses.add(address);
+          const token = tokens.find(t => t.tokenAddress.toLowerCase() === address);
+          if (token) {
+            console.log(`✓ ${token.symbol} (${address.slice(0, 10)}...) is BaseApp token (bytecode verified, pool check skipped)`);
+          }
+          return true;
+        }
+      });
+      
+      await Promise.allSettled(verificationPromises);
+      
+      // Small delay between batches
+      if (i + BATCH_SIZE < bytecodeMatches.length) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+    
+    console.log(`✓ Verified ${baseAppAddresses.size} BaseApp tokens (out of ${bytecodeMatches.length} bytecode matches)`);
     
     return baseAppAddresses;
   }
