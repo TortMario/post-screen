@@ -3,7 +3,8 @@ import WalletConnect from '@/components/WalletConnect';
 import PortfolioCard from '@/components/PortfolioCard';
 import PostList from '@/components/PostList';
 import PortfolioChart from '@/components/PortfolioChart';
-import { PortfolioAnalytics, AnalysisResult } from '@/lib/calcPnL';
+import { PortfolioAnalytics } from '@/lib/calcPnL';
+import { AnalysisResult } from '@/lib/analyze';
 
 export default function Home() {
   const [walletAddress, setWalletAddress] = useState<string>('');
