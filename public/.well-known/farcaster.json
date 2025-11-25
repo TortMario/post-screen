@@ -1,0 +1,30 @@
+{
+  "accountAssociation": {
+    "header": "",
+    "payload": "",
+    "signature": ""
+  },
+  "baseBuilder": {
+    "ownerAddress": "0xf1A98A5E238Af4eEA970E3b02973Cf6f4F1741Ac"
+  },
+  "miniapp": {
+    "version": "1",
+    "name": "BasePost Portfolio",
+    "homeUrl": "https://YOUR-DOMAIN.vercel.app",
+    "iconUrl": "https://YOUR-DOMAIN.vercel.app/icon-512.png",
+    "splashImageUrl": "https://YOUR-DOMAIN.vercel.app/icon-512.png",
+    "splashBackgroundColor": "#667eea",
+    "subtitle": "Track your BaseApp posts",
+    "description": "Analyze your BaseApp post investments and track PnL. View portfolio analytics and performance metrics.",
+    "screenshotUrls": [],
+    "primaryCategory": "finance",
+    "tags": ["finance", "analytics", "portfolio"],
+    "heroImageUrl": "https://YOUR-DOMAIN.vercel.app/icon-512.png",
+    "tagline": "Track your investments",
+    "ogTitle": "BasePost Portfolio",
+    "ogDescription": "Analyze your BaseApp post investments and track PnL",
+    "ogImageUrl": "https://YOUR-DOMAIN.vercel.app/icon-512.png",
+    "noindex": false
+  }
+}
+
