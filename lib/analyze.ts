@@ -569,12 +569,14 @@ export class AnalyticsService {
     console.log('Base App tokens are Zora coins with platformReferrer() == BASE_PLATFORM_REFERRER');
     
     // Limit the number of tokens to check to avoid timeout
-    // Check first 50 tokens to stay within Vercel's timeout limits
-    const MAX_TOKENS_TO_CHECK = 50;
+    // Check first 30 tokens to stay well within Vercel's timeout limits (60 seconds)
+    // Each token check can take 1-2 seconds, so 30 tokens = ~30-60 seconds max
+    const MAX_TOKENS_TO_CHECK = 30;
     const tokensToCheck = tokens.slice(0, MAX_TOKENS_TO_CHECK);
     
     if (tokens.length > MAX_TOKENS_TO_CHECK) {
       console.log(`⚠️ Limiting check to first ${MAX_TOKENS_TO_CHECK} tokens (out of ${tokens.length}) to avoid timeout`);
+      console.log(`⚠️ If you need to check all tokens, consider splitting the analysis or using a wallet with fewer tokens`);
     }
     
     // Check tokens in batches (this is fast since we're just calling a view function)

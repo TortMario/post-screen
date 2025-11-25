@@ -61,12 +61,50 @@ export default function Home() {
       }
 
       if (!response.ok) {
-        const errorData = await response.json();
+        // Handle 504 Gateway Timeout specifically
+        if (response.status === 504) {
+          throw new Error('GATEWAY_TIMEOUT');
+        }
+        
+        // Try to parse error as JSON, but handle HTML error pages
+        let errorData;
+        try {
+          const text = await response.text();
+          try {
+            errorData = JSON.parse(text);
+          } catch {
+            // Response is not JSON (likely HTML error page)
+            console.error('API returned non-JSON response:', text.slice(0, 200));
+            throw new Error(`Analysis failed: ${response.status} ${response.statusText}. Server may be experiencing issues.`);
+          }
+        } catch (parseError: any) {
+          if (parseError.message === 'GATEWAY_TIMEOUT' || parseError.message.includes('GATEWAY_TIMEOUT')) {
+            throw parseError;
+          }
+          throw new Error(`Analysis failed: ${response.status} ${response.statusText}. ${parseError.message}`);
+        }
+        
         console.error('API Error:', errorData);
         throw new Error(errorData.error || `Analysis failed: ${response.status} ${response.statusText}`);
       }
 
-      const result: AnalysisResult = await response.json();
+      // Parse response as JSON, handle HTML error pages
+      let result: AnalysisResult;
+      try {
+        const text = await response.text();
+        try {
+          result = JSON.parse(text);
+        } catch (parseError) {
+          // Response is not JSON (likely HTML error page from Vercel)
+          console.error('Response is not JSON, likely HTML error page:', text.slice(0, 500));
+          throw new Error('Server returned invalid response. The analysis may have timed out or the server is experiencing issues.');
+        }
+      } catch (parseError: any) {
+        if (parseError.message.includes('timed out') || parseError.message.includes('timeout')) {
+          throw new Error('GATEWAY_TIMEOUT');
+        }
+        throw parseError;
+      }
       console.log('\n=== CLIENT: Analysis result ===');
       console.log('Total tokens:', result.wallet.tokens.length);
       console.log('Tokens with balance:', result.wallet.tokens.filter(t => parseFloat(t.balanceFormatted || '0') > 0).length);
@@ -141,9 +179,18 @@ BaseApp posts are tokens created on Base App platform. Make sure you're analyzin
         clearTimeout(timeoutId);
       }
       
-      if (err.name === 'AbortError' || err.message?.includes('timeout') || err.message?.includes('Failed to fetch') || err.message?.includes('ERR_CONNECTION_CLOSED')) {
+      if (err.name === 'AbortError' || 
+          err.message?.includes('timeout') || 
+          err.message?.includes('Failed to fetch') || 
+          err.message?.includes('ERR_CONNECTION_CLOSED') ||
+          err.message === 'GATEWAY_TIMEOUT' ||
+          err.message?.includes('504') ||
+          err.message?.includes('Gateway Timeout')) {
         console.error('Request timeout or connection error:', err);
-        setError('Request timed out. The analysis is taking too long (checking many tokens). Try again or the system may be processing your request. If this persists, your wallet may have too many tokens to analyze at once.');
+        setError('Request timed out (504 Gateway Timeout). The analysis is taking too long.\n\nPossible solutions:\n1. Your wallet has too many tokens - the system checks up to 50 tokens\n2. Network issues - try again in a few moments\n3. Server is overloaded - try again later\n\nTip: If your wallet has many tokens, consider using a wallet with fewer tokens for testing.');
+      } else if (err.message?.includes('invalid response') || err.message?.includes('not valid JSON')) {
+        console.error('Invalid response error:', err);
+        setError('Server returned an invalid response. This usually means the request timed out on the server side.\n\nTry again in a few moments, or check if your wallet has too many tokens.');
       } else {
         setError(err.message || 'Failed to analyze wallet');
         console.error('Analysis error:', err);
