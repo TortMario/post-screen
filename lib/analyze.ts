@@ -568,12 +568,21 @@ export class AnalyticsService {
     console.log('This is the fastest method - directly checks platformReferrer() on each token');
     console.log('Base App tokens are Zora coins with platformReferrer() == BASE_PLATFORM_REFERRER');
     
-    // Check all tokens (this is fast since we're just calling a view function)
-    const BATCH_SIZE = 10; // Check 10 tokens at a time
-    const totalBatches = Math.ceil(tokens.length / BATCH_SIZE);
+    // Limit the number of tokens to check to avoid timeout
+    // Check first 50 tokens to stay within Vercel's timeout limits
+    const MAX_TOKENS_TO_CHECK = 50;
+    const tokensToCheck = tokens.slice(0, MAX_TOKENS_TO_CHECK);
     
-    for (let i = 0; i < tokens.length; i += BATCH_SIZE) {
-      const batch = tokens.slice(i, i + BATCH_SIZE);
+    if (tokens.length > MAX_TOKENS_TO_CHECK) {
+      console.log(`⚠️ Limiting check to first ${MAX_TOKENS_TO_CHECK} tokens (out of ${tokens.length}) to avoid timeout`);
+    }
+    
+    // Check tokens in batches (this is fast since we're just calling a view function)
+    const BATCH_SIZE = 15; // Increased batch size for faster processing
+    const totalBatches = Math.ceil(tokensToCheck.length / BATCH_SIZE);
+    
+    for (let i = 0; i < tokensToCheck.length; i += BATCH_SIZE) {
+      const batch = tokensToCheck.slice(i, i + BATCH_SIZE);
       const batchNum = Math.floor(i / BATCH_SIZE) + 1;
       console.log(`  Checking batch ${batchNum}/${totalBatches} (${batch.length} tokens)...`);
       
@@ -622,8 +631,8 @@ export class AnalyticsService {
       await Promise.allSettled(checkPromises);
       
       // Small delay between batches to avoid rate limits
-      if (i + BATCH_SIZE < tokens.length) {
-        await new Promise(resolve => setTimeout(resolve, 200));
+      if (i + BATCH_SIZE < tokensToCheck.length) {
+        await new Promise(resolve => setTimeout(resolve, 100)); // Reduced delay for faster processing
       }
     }
     

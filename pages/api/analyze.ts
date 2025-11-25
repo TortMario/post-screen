@@ -1,6 +1,11 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { AnalyticsService } from '@/lib/analyze';
 
+// Configure max duration for Vercel (60 seconds)
+export const config = {
+  maxDuration: 60,
+};
+
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
@@ -9,6 +14,9 @@ export default async function handler(
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  // Set a longer timeout for the response
+  res.setHeader('Connection', 'keep-alive');
+  
   try {
     const { address, baseScanApiKey, coinGeckoApiKey } = req.body;
 

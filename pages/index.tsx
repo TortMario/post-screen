@@ -32,10 +32,16 @@ export default function Home() {
       return;
     }
 
+    // Set a longer timeout for the fetch request (70 seconds to account for Vercel's 60s limit)
+    const controller = new AbortController();
+    let timeoutId: NodeJS.Timeout | null = null;
+
     try {
       setLoading(true);
       setError(null);
 
+      timeoutId = setTimeout(() => controller.abort(), 70000); // 70 seconds timeout
+      
       const response = await fetch('/api/analyze', {
         method: 'POST',
         headers: {
@@ -46,7 +52,13 @@ export default function Home() {
           baseScanApiKey: process.env.NEXT_PUBLIC_BASESCAN_API_KEY || '',
           coinGeckoApiKey: process.env.NEXT_PUBLIC_COINGECKO_API_KEY || '',
         }),
+        signal: controller.signal,
       });
+      
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
 
       if (!response.ok) {
         const errorData = await response.json();
@@ -110,8 +122,17 @@ BaseApp posts are tokens created on Base App platform. Make sure you're analyzin
         }
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to analyze wallet');
-      console.error('Analysis error:', err);
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      
+      if (err.name === 'AbortError' || err.message?.includes('timeout') || err.message?.includes('Failed to fetch') || err.message?.includes('ERR_CONNECTION_CLOSED')) {
+        console.error('Request timeout or connection error:', err);
+        setError('Request timed out. The analysis is taking too long (checking many tokens). Try again or the system may be processing your request. If this persists, your wallet may have too many tokens to analyze at once.');
+      } else {
+        setError(err.message || 'Failed to analyze wallet');
+        console.error('Analysis error:', err);
+      }
     } finally {
       setLoading(false);
     }
