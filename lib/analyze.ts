@@ -4,7 +4,7 @@ import { PostPriceService, PriceData } from './getPostPrice';
 import { PnLCalculator, PostAnalytics, PortfolioAnalytics } from './calcPnL';
 import { BaseAppDetector } from './baseAppDetector';
 import { enrichTokensWithDexScreener } from './findTokensViaDexScreener';
-import { isBaseAppTokenByPool } from './uniswapV4Detector';
+import { isBaseAppTokenByPool, isBaseAppTokenByReferrer } from './uniswapV4Detector';
 import type { Address } from 'viem';
 
 export interface AnalysisResult {
@@ -83,26 +83,38 @@ export class AnalyticsService {
 
     if (baseAppTokenAddresses.size === 0) {
       console.warn('\n⚠️ No BaseApp tokens found by bytecode check');
-      console.warn('Trying alternative method: checking tokens via Uniswap V4 pools...');
-      console.warn('This may take longer but will find tokens even if bytecode changed');
+      console.warn('Trying alternative method: checking platformReferrer() directly on tokens...');
+      console.warn('This is the recommended method from Base documentation');
       
-      // Alternative: try to find Base App tokens by checking pools directly
-      // This is slower but more reliable if bytecode has changed
-      const alternativeBaseAppTokens = await this.detectBaseAppTokensByPool(tokensWithBalance);
+      // Alternative: try to find Base App tokens by checking platformReferrer() directly
+      // This is the fastest and most direct method according to Base docs
+      const alternativeBaseAppTokens = await this.detectBaseAppTokensByReferrer(tokensWithBalance);
       
       if (alternativeBaseAppTokens.size > 0) {
-        console.log(`✓ Found ${alternativeBaseAppTokens.size} BaseApp tokens via pool check`);
+        console.log(`✓ Found ${alternativeBaseAppTokens.size} BaseApp tokens via platformReferrer() check`);
         baseAppTokenAddresses = alternativeBaseAppTokens;
       } else {
-        console.warn('⚠️ No BaseApp tokens found via pool check either');
-        console.warn('Possible reasons:');
-        console.warn('1. Tokens are not Base App tokens');
-        console.warn('2. Tokens do not have Uniswap V4 pools yet');
-        console.warn('3. Network/RPC issues');
-        return {
-          wallet: walletData,
-          portfolio: this.pnlCalculator.calculatePortfolioAnalytics([]),
-        };
+        console.warn('⚠️ No BaseApp tokens found via platformReferrer() check');
+        console.warn('Trying fallback: checking tokens via Uniswap V4 pools...');
+        
+        // Fallback: try pool-based check (slower but may find tokens without direct access)
+        const poolBaseAppTokens = await this.detectBaseAppTokensByPool(tokensWithBalance);
+        
+        if (poolBaseAppTokens.size > 0) {
+          console.log(`✓ Found ${poolBaseAppTokens.size} BaseApp tokens via pool check`);
+          baseAppTokenAddresses = poolBaseAppTokens;
+        } else {
+          console.warn('⚠️ No BaseApp tokens found via any method');
+          console.warn('Possible reasons:');
+          console.warn('1. Tokens are not Base App tokens (not created via Base App)');
+          console.warn('2. Tokens do not have platformReferrer() function (not Zora coins)');
+          console.warn('3. Network/RPC issues preventing checks');
+          console.warn('4. Tokens may be created via other platforms (Zora directly, not Base App)');
+          return {
+            wallet: walletData,
+            portfolio: this.pnlCalculator.calculatePortfolioAnalytics([]),
+          };
+        }
       }
     }
 
@@ -541,8 +553,72 @@ export class AnalyticsService {
     }
 
   /**
+   * Alternative method: Detect BaseApp tokens by directly checking platformReferrer()
+   * This is the fastest and most direct method according to Base documentation
+   * Base App tokens are Zora coins with platformReferrer() == BASE_PLATFORM_REFERRER
+   */
+  private async detectBaseAppTokensByReferrer(tokens: TokenBalance[]): Promise<Set<string>> {
+    const baseAppAddresses = new Set<string>();
+    
+    if (tokens.length === 0) {
+      return baseAppAddresses;
+    }
+
+    console.log(`\n=== Alternative: Checking ${tokens.length} tokens via platformReferrer() ===`);
+    console.log('This is the fastest method - directly checks platformReferrer() on each token');
+    console.log('Base App tokens are Zora coins with platformReferrer() == BASE_PLATFORM_REFERRER');
+    
+    // Check all tokens (this is fast since we're just calling a view function)
+    const BATCH_SIZE = 10; // Check 10 tokens at a time
+    const totalBatches = Math.ceil(tokens.length / BATCH_SIZE);
+    
+    for (let i = 0; i < tokens.length; i += BATCH_SIZE) {
+      const batch = tokens.slice(i, i + BATCH_SIZE);
+      const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+      console.log(`  Checking batch ${batchNum}/${totalBatches} (${batch.length} tokens)...`);
+      
+      const checkPromises = batch.map(async (token) => {
+        try {
+          const isBaseApp = await Promise.race([
+            isBaseAppTokenByReferrer(token.tokenAddress as Address),
+            new Promise<boolean>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 10000))
+          ]);
+          
+          if (isBaseApp) {
+            baseAppAddresses.add(token.tokenAddress.toLowerCase());
+            console.log(`    ✓ ${token.symbol || 'Unknown'} (${token.tokenAddress.slice(0, 10)}...) is BaseApp token`);
+          }
+          
+          return { address: token.tokenAddress, isBaseApp };
+        } catch (error: any) {
+          // If platformReferrer() doesn't exist, token is not a Zora coin
+          if (error.message?.includes('function does not exist') || 
+              error.message?.includes('execution reverted') ||
+              error.message?.includes('Timeout')) {
+            // This is expected for non-Zora tokens
+            return { address: token.tokenAddress, isBaseApp: false };
+          }
+          console.log(`    ⚠ ${token.symbol || 'Unknown'} (${token.tokenAddress.slice(0, 10)}...) check failed: ${error.message}`);
+          return { address: token.tokenAddress, isBaseApp: false };
+        }
+      });
+      
+      await Promise.allSettled(checkPromises);
+      
+      // Small delay between batches to avoid rate limits
+      if (i + BATCH_SIZE < tokens.length) {
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+    }
+    
+    console.log(`\n✓ Found ${baseAppAddresses.size} BaseApp tokens via platformReferrer() check`);
+    
+    return baseAppAddresses;
+  }
+
+  /**
    * Alternative method: Detect BaseApp tokens by checking Uniswap V4 pools
-   * This is slower but more reliable if bytecode has changed
+   * This is slower but can be used as a fallback
    */
   private async detectBaseAppTokensByPool(tokens: TokenBalance[]): Promise<Set<string>> {
     const baseAppAddresses = new Set<string>();
@@ -551,7 +627,7 @@ export class AnalyticsService {
       return baseAppAddresses;
     }
 
-    console.log(`\n=== Alternative: Checking ${tokens.length} tokens via Uniswap V4 pools ===`);
+    console.log(`\n=== Fallback: Checking tokens via Uniswap V4 pools ===`);
     console.log('This method checks if tokens have pools with Base App platformReferrer');
     
     // Check a sample of tokens (checking all would be too slow)

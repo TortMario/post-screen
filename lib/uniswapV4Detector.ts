@@ -222,6 +222,37 @@ async function tryGetPlatformReferrer(
 }
 
 /**
+ * Check if a token is a Base App token by directly checking platformReferrer()
+ * This is the fastest and most direct method according to Base documentation
+ * Base App tokens are Zora coins with platformReferrer() == BASE_PLATFORM_REFERRER
+ */
+export async function isBaseAppTokenByReferrer(
+  tokenAddress: Address,
+  client?: ReturnType<typeof createBaseClient>
+): Promise<boolean> {
+  if (!client) {
+    client = createBaseClient();
+  }
+
+  try {
+    const platformReferrer = await tryGetPlatformReferrer(tokenAddress, client);
+    
+    const isBaseApp = platformReferrer.toLowerCase() === BASE_PLATFORM_REFERRER.toLowerCase();
+    
+    if (isBaseApp) {
+      console.log(`    ✓ Token ${tokenAddress} is Base App token (platformReferrer: ${platformReferrer})`);
+    } else {
+      console.log(`    ✗ Token ${tokenAddress} is not Base App token (platformReferrer: ${platformReferrer || 'N/A'})`);
+    }
+    
+    return isBaseApp;
+  } catch (error) {
+    console.error(`    ✗ Error checking platformReferrer for ${tokenAddress}:`, error);
+    return false;
+  }
+}
+
+/**
  * Categorize app type (Base App vs Zora) by checking platformReferrer
  * This is the correct method according to Base documentation
  */
