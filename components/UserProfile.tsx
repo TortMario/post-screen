@@ -18,25 +18,55 @@ export default function UserProfile({ address }: UserProfileProps) {
       
       setIsLoading(true);
       try {
-        // Create public client for Base
-        const client = createPublicClient({
-          chain: base,
-          transport: http('https://mainnet.base.org'),
-        });
+        // Try multiple RPC endpoints for Base name resolution
+        const rpcUrls = [
+          'https://mainnet.base.org',
+          'https://base-mainnet.public.blastapi.io',
+          'https://base.llamarpc.com',
+        ];
 
-        // Try to resolve Base name (ENS name on Base)
-        const name = await client.getEnsName({
-          address: address as `0x${string}`,
-          coinType: toCoinType(base.id),
-        });
+        let name: string | null = null;
+        let lastError: Error | null = null;
+
+        // Try each RPC endpoint
+        for (const rpcUrl of rpcUrls) {
+          try {
+            const client = createPublicClient({
+              chain: base,
+              transport: http(rpcUrl),
+            });
+
+            // Try to resolve Base name (ENS name on Base) with coinType
+            const resolvedName = await Promise.race([
+              client.getEnsName({
+                address: address as `0x${string}`,
+                coinType: toCoinType(base.id),
+              }),
+              new Promise<string | null>((_, reject) => 
+                setTimeout(() => reject(new Error('Timeout')), 10000)
+              ),
+            ]) as string | null;
+
+            if (resolvedName) {
+              name = resolvedName;
+              console.log('✅ Resolved Base name:', resolvedName, 'via', rpcUrl);
+              break; // Success, no need to try other RPCs
+            }
+          } catch (rpcError: any) {
+            console.warn(`Failed to resolve Base name via ${rpcUrl}:`, rpcError.message);
+            lastError = rpcError;
+            // Continue to next RPC
+          }
+        }
 
         if (name) {
           setBasename(name);
-          console.log('Resolved Base name:', name);
+        } else {
+          console.log('No Base name found for address (this is normal for addresses without .base names)');
         }
-      } catch (error) {
-        console.error('Error fetching Base name:', error);
-        // Silently fail - not all addresses have Base names
+      } catch (error: any) {
+        console.warn('Error fetching Base name (non-critical):', error.message);
+        // Silently fail - not all addresses have Base names, and resolution may require private RPC
       } finally {
         setIsLoading(false);
       }

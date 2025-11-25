@@ -63,25 +63,38 @@ export default function Home() {
       
       if (result.wallet.tokens.length === 0) {
         console.error('❌ No tokens found in wallet');
-        console.error('This means the API returned 0 tokens. Check server logs for API responses.');
-        setError('No tokens found. Check browser console and server logs for details.');
+        console.error('This might mean:');
+        console.error('1. API rate limiting - check if you have BaseScan API key');
+        console.error('2. Wallet has no tokens on Base network');
+        console.error('3. API key is invalid or missing');
+        console.error('Check server logs for detailed API responses.');
+        
+        setError(`No tokens found. Possible reasons:
+1. API rate limit (add BaseScan API key to .env.local)
+2. Wallet has no tokens on Base network
+3. Check console for detailed logs`);
       } else {
         const tokensWithBalance = result.wallet.tokens.filter(t => parseFloat(t.balanceFormatted || '0') > 0);
         console.log(`✓ Found ${result.wallet.tokens.length} total tokens, ${tokensWithBalance.length} with balance > 0`);
         
         if (tokensWithBalance.length === 0) {
           console.warn('⚠️ Tokens found but all have zero balance');
-          setError(`Found ${result.wallet.tokens.length} tokens but all have zero balance.`);
+          setError(`Found ${result.wallet.tokens.length} tokens but all have zero balance. Make sure you have tokens with non-zero balance.`);
         } else if (result.portfolio.countOfPostTokens === 0) {
-          console.warn(`⚠️ Found ${tokensWithBalance.length} tokens with balance, but none are BaseApp tokens or couldn't be analyzed`);
+          console.warn(`⚠️ Found ${tokensWithBalance.length} tokens with balance, but none are BaseApp tokens`);
           console.warn('Token details:', tokensWithBalance.slice(0, 5).map(t => ({
-            symbol: t.symbol,
+            symbol: t.symbol || 'Unknown',
             address: t.tokenAddress.slice(0, 10) + '...',
             balance: t.balanceFormatted
           })));
-          setError(`Found ${tokensWithBalance.length} tokens but couldn't analyze them as BaseApp posts. Check server logs for details.`);
+          
+          // More helpful error message
+          const tokenSymbols = tokensWithBalance.slice(0, 3).map(t => t.symbol || 'Unknown').join(', ');
+          setError(`Found ${tokensWithBalance.length} tokens (${tokenSymbols}...) but none are BaseApp posts. 
+BaseApp posts are tokens created on Base App platform. Make sure you're analyzing a wallet with BaseApp post purchases.`);
         } else {
           console.log(`✅ Successfully analyzed ${result.portfolio.countOfPostTokens} BaseApp posts`);
+          setError(null); // Clear any previous errors
         }
       }
       

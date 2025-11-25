@@ -14,16 +14,22 @@ export default async function handler(
 
     console.log('=== API Analyze Request ===');
     console.log('Address:', address);
-    console.log('Has BaseScan API key:', !!baseScanApiKey);
-    console.log('Has CoinGecko API key:', !!coinGeckoApiKey);
+    console.log('Has BaseScan API key (from body):', !!baseScanApiKey);
+    console.log('Has CoinGecko API key (from body):', !!coinGeckoApiKey);
     
     // Also check env variables
     const envBaseScanKey = process.env.NEXT_PUBLIC_BASESCAN_API_KEY;
     const envCoinGeckoKey = process.env.NEXT_PUBLIC_COINGECKO_API_KEY;
     
+    console.log('Has BaseScan API key (from env):', !!envBaseScanKey);
+    console.log('Has CoinGecko API key (from env):', !!envCoinGeckoKey);
+    
     // Use provided keys or env keys
     const finalBaseScanKey = baseScanApiKey || envBaseScanKey || '';
     const finalCoinGeckoKey = coinGeckoApiKey || envCoinGeckoKey || '';
+    
+    console.log('Using BaseScan API key:', !!finalBaseScanKey, '(length:', finalBaseScanKey.length, ')');
+    console.log('Using CoinGecko API key:', !!finalCoinGeckoKey);
 
     if (!address) {
       return res.status(400).json({ error: 'Wallet address is required' });
@@ -43,7 +49,14 @@ export default async function handler(
     console.log('Posts analyzed:', result.portfolio.countOfPostTokens);
     console.log('Total PnL:', result.portfolio.totalPnLPct.toFixed(2) + '%');
     
-    if (result.wallet.tokens.length > 0) {
+    if (result.wallet.tokens.length === 0) {
+      console.error('⚠️ WARNING: No tokens found!');
+      console.error('This could mean:');
+      console.error('1. API rate limit (add NEXT_PUBLIC_BASESCAN_API_KEY to .env.local)');
+      console.error('2. Wallet has no tokens on Base network');
+      console.error('3. API key is invalid or expired');
+      console.error('4. Network connection issues');
+    } else if (result.wallet.tokens.length > 0) {
       console.log('Sample tokens:', result.wallet.tokens.slice(0, 5).map(t => ({
         symbol: t.symbol,
         name: t.name,
