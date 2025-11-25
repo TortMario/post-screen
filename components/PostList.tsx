@@ -83,7 +83,7 @@ export default function PostList({ posts }: PostListProps) {
 
               <div className="flex justify-between items-center text-sm mb-3">
                 <span className="text-gray-400">
-                  PnL: <span className={`font-bold ${pnlColor}`}>{post.pnl >= 0 ? '+' : ''}${parseFloat(post.pnl).toFixed(2)}</span>
+                  PnL: <span className={`font-bold ${pnlColor}`}>{parseFloat(post.pnl) >= 0 ? '+' : ''}${parseFloat(post.pnl).toFixed(2)}</span>
                 </span>
                 <span className="text-gray-400">
                   <span className="text-blue-400 font-semibold">{post.buyCount}</span> buys • <span className="text-purple-400 font-semibold">{post.sellCount}</span> sells
