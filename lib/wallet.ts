@@ -120,8 +120,22 @@ export class WalletService {
         throw new Error(`Etherscan API V2 error: ${response.status} ${response.statusText}`);
       }
       
-      const data = await response.json();
-      console.log('=== Etherscan API V2 Response ===');
+      const responseText = await response.text();
+      console.log('=== Etherscan API V2 Raw Response ===');
+      console.log('Response status:', response.status);
+      console.log('Response headers:', Object.fromEntries(response.headers.entries()));
+      console.log('Response text (first 1000 chars):', responseText.slice(0, 1000));
+      
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error('Failed to parse JSON response:', parseError);
+        console.error('Full response text:', responseText);
+        throw new Error(`Invalid JSON response from API: ${responseText.slice(0, 200)}`);
+      }
+      
+      console.log('=== Etherscan API V2 Parsed Response ===');
       console.log('Full response:', JSON.stringify(data, null, 2));
       console.log('Status:', data.status);
       console.log('Message:', data.message);
@@ -129,6 +143,7 @@ export class WalletService {
       console.log('Result length:', Array.isArray(data.result) ? data.result.length : 'N/A');
       console.log('API Key provided:', !!this.baseScanApiKey);
       console.log('API Key length:', this.baseScanApiKey?.length || 0);
+      console.log('API Key (first 10 chars):', this.baseScanApiKey ? this.baseScanApiKey.slice(0, 10) + '...' : 'N/A');
       
       // Check for V1 deprecation message
       if (data.message?.includes('deprecated V1 endpoint')) {
@@ -141,28 +156,40 @@ export class WalletService {
         console.error('  Status:', data.status);
         console.error('  Message:', data.message);
         console.error('  Result:', typeof data.result === 'string' ? data.result : JSON.stringify(data.result, null, 2).slice(0, 500));
+        console.error('  Full error response:', JSON.stringify(data, null, 2));
         
         // Check for specific error messages
         const errorMsg = (data.message || '').toLowerCase();
         const resultMsg = (typeof data.result === 'string' ? data.result : '').toLowerCase();
+        const fullErrorText = errorMsg + ' ' + resultMsg;
         
-        if (errorMsg.includes('rate limit') || resultMsg.includes('rate limit') ||
-            errorMsg.includes('max rate limit') || resultMsg.includes('max rate limit')) {
-          console.error('⚠️ Rate limit exceeded. Please add a BaseScan API key or wait a few minutes.');
+        console.error('  Error analysis:');
+        console.error('    - Contains "rate limit":', fullErrorText.includes('rate limit'));
+        console.error('    - Contains "invalid api key":', fullErrorText.includes('invalid api key'));
+        console.error('    - Contains "api key":', fullErrorText.includes('api key'));
+        console.error('    - Contains "notok":', fullErrorText.includes('notok'));
+        console.error('    - API key present:', !!this.baseScanApiKey);
+        
+        if (fullErrorText.includes('rate limit') || fullErrorText.includes('max rate limit')) {
+          console.error('⚠️ Rate limit exceeded. Please wait a few minutes or upgrade your API plan.');
         }
         
-        if (errorMsg.includes('invalid api key') || resultMsg.includes('invalid api key') ||
-            errorMsg.includes('api key') || resultMsg.includes('api key')) {
-          console.error('⚠️ API key issue. Check if your BaseScan API key is valid.');
+        if (fullErrorText.includes('invalid api key') || 
+            (fullErrorText.includes('api key') && !fullErrorText.includes('rate limit'))) {
+          console.error('⚠️ API key issue. Check if your Etherscan API key is valid.');
+          console.error('   API key format check:', this.baseScanApiKey ? `Length: ${this.baseScanApiKey.length}, Starts with: ${this.baseScanApiKey.slice(0, 5)}...` : 'No API key');
         }
         
-        // If rate limited or no API key, try alternative method
-        if (errorMsg.includes('rate limit') || 
-            errorMsg.includes('invalid api key') ||
-            errorMsg.includes('max rate limit') ||
-            !this.baseScanApiKey) {
-          console.warn('Trying alternative method: direct RPC token balance check...');
-          return await this.getTokenBalancesViaRPC(address);
+        // Always try alternative method if API returns error
+        console.warn('Trying alternative method: direct RPC token balance check...');
+        try {
+          const rpcResult = await this.getTokenBalancesViaRPC(address);
+          if (rpcResult.length > 0) {
+            console.log(`✓ RPC method found ${rpcResult.length} tokens - API may have issues`);
+            return rpcResult;
+          }
+        } catch (rpcError) {
+          console.error('RPC fallback also failed:', rpcError);
         }
         
         // If result is a string error message, log it
@@ -417,11 +444,23 @@ export class WalletService {
       console.log('Trying tokenlist endpoint (Etherscan API V2)...');
       
       const response = await fetch(tokenListUrl);
-      const data = await response.json();
+      const responseText = await response.text();
+      console.log('Tokenlist endpoint response status:', response.status);
+      console.log('Tokenlist endpoint response (first 500 chars):', responseText.slice(0, 500));
+      
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error('Failed to parse tokenlist JSON:', parseError);
+        throw new Error(`Invalid JSON from tokenlist endpoint: ${responseText.slice(0, 200)}`);
+      }
+      
+      console.log('Tokenlist endpoint parsed data:', JSON.stringify(data, null, 2).slice(0, 1000));
       
       if (data.status === '1' && Array.isArray(data.result)) {
-        console.log(`Found ${data.result.length} tokens via tokenlist endpoint`);
-        return data.result.map((token: any) => ({
+        console.log(`✓ Found ${data.result.length} tokens via tokenlist endpoint`);
+        const tokens = data.result.map((token: any) => ({
           contractAddress: token.contractAddress,
           tokenAddress: token.contractAddress,
           name: token.name || 'Unknown',
@@ -430,6 +469,9 @@ export class WalletService {
           balance: token.balance || '0',
           balanceFormatted: (parseFloat(token.balance || '0') / Math.pow(10, parseInt(token.decimals || '18'))).toFixed(6),
         })).filter((t: TokenBalance) => parseFloat(t.balanceFormatted) > 0);
+        
+        console.log(`✓ Filtered to ${tokens.length} tokens with balance > 0`);
+        return tokens;
       }
     } catch (error) {
       console.error('Tokenlist endpoint failed:', error);
