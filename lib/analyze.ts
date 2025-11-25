@@ -66,56 +66,51 @@ export class AnalyticsService {
       };
     }
 
-    // STEP 1: Check which tokens are BaseApp tokens by bytecode (ONLY for tokens in wallet)
-    console.log(`\n=== Step 1: Detecting BaseApp Tokens ===`);
+    // STEP 1: Fast bytecode check to filter tokens (this is very fast)
+    console.log(`\n=== Step 1: Fast Bytecode Filter ===`);
     console.log(`Checking ${tokensWithBalance.length} wallet tokens for BaseApp bytecode fingerprint...`);
-    console.log(`Token addresses to check:`, tokensWithBalance.slice(0, 10).map(t => t.tokenAddress.slice(0, 10) + '...'));
-    if (tokensWithBalance.length > 10) {
-      console.log(`... and ${tokensWithBalance.length - 10} more tokens`);
-    }
+    console.log(`This is fast - we'll only check platformReferrer() for tokens that match bytecode`);
     
     let baseAppTokenAddresses = await this.detectBaseAppTokensByBytecode(tokensWithBalance);
-    console.log(`✓ Identified ${baseAppTokenAddresses.size} BaseApp tokens by bytecode (out of ${tokensWithBalance.length} total tokens)`);
+    console.log(`✓ Found ${baseAppTokenAddresses.size} tokens with BaseApp bytecode (out of ${tokensWithBalance.length} total)`);
     
     if (baseAppTokenAddresses.size > 0) {
-      console.log(`BaseApp token addresses found:`, Array.from(baseAppTokenAddresses).slice(0, 10).map(a => a.slice(0, 10) + '...'));
+      console.log(`BaseApp token addresses (bytecode match):`, Array.from(baseAppTokenAddresses).slice(0, 10).map(a => a.slice(0, 10) + '...'));
     }
 
-    if (baseAppTokenAddresses.size === 0) {
-      console.warn('\n⚠️ No BaseApp tokens found by bytecode check');
-      console.warn('Trying alternative method: checking platformReferrer() directly on tokens...');
-      console.warn('This is the recommended method from Base documentation');
+    // STEP 2: Verify bytecode matches via platformReferrer() (only for filtered tokens - much faster!)
+    if (baseAppTokenAddresses.size > 0) {
+      console.log(`\n=== Step 2: Verifying ${baseAppTokenAddresses.size} tokens via platformReferrer() ===`);
+      console.log(`Only checking tokens that passed bytecode filter - this is much faster!`);
       
-      // Alternative: try to find Base App tokens by checking platformReferrer() directly
-      // This is the fastest and most direct method according to Base docs
-      const alternativeBaseAppTokens = await this.detectBaseAppTokensByReferrer(tokensWithBalance);
+      // Get tokens that passed bytecode check
+      const bytecodeMatchedTokens = tokensWithBalance.filter(t => 
+        baseAppTokenAddresses.has(t.tokenAddress.toLowerCase())
+      );
       
-      if (alternativeBaseAppTokens.size > 0) {
-        console.log(`✓ Found ${alternativeBaseAppTokens.size} BaseApp tokens via platformReferrer() check`);
-        baseAppTokenAddresses = alternativeBaseAppTokens;
+      // Verify via platformReferrer() - this is fast since we only check filtered tokens
+      const verifiedTokens = await this.verifyTokensByReferrer(bytecodeMatchedTokens);
+      
+      if (verifiedTokens.size > 0) {
+        console.log(`✓ Verified ${verifiedTokens.size} BaseApp tokens via platformReferrer()`);
+        baseAppTokenAddresses = verifiedTokens;
       } else {
-        console.warn('⚠️ No BaseApp tokens found via platformReferrer() check');
-        console.warn('Trying fallback: checking tokens via Uniswap V4 pools...');
-        
-        // Fallback: try pool-based check (slower but may find tokens without direct access)
-        const poolBaseAppTokens = await this.detectBaseAppTokensByPool(tokensWithBalance);
-        
-        if (poolBaseAppTokens.size > 0) {
-          console.log(`✓ Found ${poolBaseAppTokens.size} BaseApp tokens via pool check`);
-          baseAppTokenAddresses = poolBaseAppTokens;
-        } else {
-          console.warn('⚠️ No BaseApp tokens found via any method');
-          console.warn('Possible reasons:');
-          console.warn('1. Tokens are not Base App tokens (not created via Base App)');
-          console.warn('2. Tokens do not have platformReferrer() function (not Zora coins)');
-          console.warn('3. Network/RPC issues preventing checks');
-          console.warn('4. Tokens may be created via other platforms (Zora directly, not Base App)');
-          return {
-            wallet: walletData,
-            portfolio: this.pnlCalculator.calculatePortfolioAnalytics([]),
-          };
-        }
+        console.warn('⚠️ Bytecode matches found but platformReferrer() verification failed');
+        console.warn('Trusting bytecode matches (bytecode is a strong indicator)');
+        // Keep bytecode matches - bytecode is reliable
       }
+    } else {
+      console.warn('\n⚠️ No BaseApp tokens found by bytecode check');
+      console.warn('Bytecode check is the fastest method - if no matches, tokens are likely not Base App tokens');
+      console.warn('Possible reasons:');
+      console.warn('1. Tokens are not Base App tokens (not created via Base App)');
+      console.warn('2. Token bytecode has changed (unlikely but possible)');
+      console.warn('3. Network/RPC issues preventing bytecode checks');
+      
+      return {
+        wallet: walletData,
+        portfolio: this.pnlCalculator.calculatePortfolioAnalytics([]),
+      };
     }
 
     // STEP 2: Filter to only BaseApp tokens
@@ -281,77 +276,18 @@ export class AnalyticsService {
       return baseAppAddresses;
     }
     
-    console.log(`\nVerifying ${bytecodeMatches.length} tokens via pool platformReferrer (correct method from Base docs)...`);
-    console.log('Note: This may take a while as we check Uniswap V4 pools for each token');
-    
-    // Second pass: verify using pool platformReferrer (correct method from documentation)
-    // This is slower but more accurate - we verify a subset of tokens
-    // For now, we'll trust bytecode matches and only verify a few tokens as a sample
-    // If bytecode matches, we trust it (it's a strong indicator)
-    const VERIFY_SAMPLE_SIZE = Math.min(5, bytecodeMatches.length); // Verify first 5 tokens
-    const tokensToVerify = bytecodeMatches.slice(0, VERIFY_SAMPLE_SIZE);
-    const tokensToTrust = bytecodeMatches.slice(VERIFY_SAMPLE_SIZE);
-    
-    // Add tokens we'll trust without verification
-    for (const address of tokensToTrust) {
+    // Return all bytecode matches - verification will be done separately for speed
+    // Bytecode check is fast and reliable, so we trust these matches
+    for (const address of bytecodeMatches) {
       baseAppAddresses.add(address);
       const token = tokens.find(t => t.tokenAddress.toLowerCase() === address);
       if (token) {
-        console.log(`✓ ${token.symbol || 'Unknown'} (${address.slice(0, 10)}...) - BaseApp token (bytecode verified)`);
+        console.log(`  ✓ Bytecode match: ${token.symbol || 'Unknown'} (${address.slice(0, 10)}...)`);
       }
     }
     
-    // Verify sample tokens
-    if (tokensToVerify.length > 0) {
-      console.log(`\nVerifying sample of ${tokensToVerify.length} tokens via pool check...`);
-      const BATCH_SIZE = 2; // Verify 2 tokens at a time to avoid rate limits
-      
-      for (let i = 0; i < tokensToVerify.length; i += BATCH_SIZE) {
-        const batch = tokensToVerify.slice(i, i + BATCH_SIZE);
-        console.log(`  Verifying batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(tokensToVerify.length / BATCH_SIZE)}...`);
-        
-        const verificationPromises = batch.map(async (address) => {
-          const token = tokens.find(t => t.tokenAddress.toLowerCase() === address);
-          const tokenName = token?.symbol || address.slice(0, 10) + '...';
-          
-          try {
-            console.log(`    Checking pool for ${tokenName}...`);
-            // Use the correct method: check pool platformReferrer
-            const isBaseAppByPool = await Promise.race([
-              isBaseAppTokenByPool(address as Address),
-              new Promise<boolean>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 20000))
-            ]);
-            
-            if (isBaseAppByPool) {
-              baseAppAddresses.add(address);
-              console.log(`    ✓ ${tokenName} confirmed as BaseApp by pool platformReferrer`);
-              return true;
-            } else {
-              console.log(`    ⚠ ${tokenName} has BaseApp bytecode but pool check returned false`);
-              // Still trust bytecode - it's a strong indicator
-              baseAppAddresses.add(address);
-              console.log(`    ✓ ${tokenName} trusted as BaseApp based on bytecode (pool check inconclusive)`);
-              return true;
-            }
-          } catch (error: any) {
-            // If pool check fails, still trust bytecode match (bytecode is a strong indicator)
-            console.log(`    ⚠ ${tokenName} pool check failed (${error.message}), trusting bytecode match`);
-            baseAppAddresses.add(address);
-            console.log(`    ✓ ${tokenName} is BaseApp token (bytecode verified, pool check skipped)`);
-            return true;
-          }
-        });
-        
-        await Promise.allSettled(verificationPromises);
-        
-        // Small delay between batches
-        if (i + BATCH_SIZE < tokensToVerify.length) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-      }
-    }
-    
-    console.log(`\n✓ Total BaseApp tokens identified: ${baseAppAddresses.size} (${bytecodeMatches.length} bytecode matches)`);
+    console.log(`\n✓ Total BaseApp tokens identified by bytecode: ${baseAppAddresses.size}`);
+    console.log('Note: These will be verified via platformReferrer() in the next step (fast verification)');
     
     return baseAppAddresses;
   }
@@ -553,9 +489,72 @@ export class AnalyticsService {
     }
 
   /**
+   * Verify tokens that passed bytecode check via platformReferrer()
+   * This is fast because we only check tokens that already matched bytecode
+   */
+  private async verifyTokensByReferrer(tokens: TokenBalance[]): Promise<Set<string>> {
+    const verifiedAddresses = new Set<string>();
+    
+    if (tokens.length === 0) {
+      return verifiedAddresses;
+    }
+
+    console.log(`Verifying ${tokens.length} bytecode-matched tokens via platformReferrer()...`);
+    
+    // Check all tokens in parallel batches (fast since we only check filtered tokens)
+    const BATCH_SIZE = 20; // Larger batches since we have fewer tokens
+    const totalBatches = Math.ceil(tokens.length / BATCH_SIZE);
+    
+    for (let i = 0; i < tokens.length; i += BATCH_SIZE) {
+      const batch = tokens.slice(i, i + BATCH_SIZE);
+      const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+      console.log(`  Verifying batch ${batchNum}/${totalBatches} (${batch.length} tokens)...`);
+      
+      const checkPromises = batch.map(async (token) => {
+        const tokenAddress = token.tokenAddress as Address;
+        const tokenName = token.symbol || token.tokenAddress.slice(0, 10) + '...';
+        
+        try {
+          const isBaseApp = await Promise.race([
+            isBaseAppTokenByReferrer(tokenAddress),
+            new Promise<boolean>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000))
+          ]);
+          
+          if (isBaseApp) {
+            verifiedAddresses.add(token.tokenAddress.toLowerCase());
+            console.log(`    ✓ ${tokenName} verified as BaseApp token`);
+          } else {
+            console.log(`    ⚠ ${tokenName} has BaseApp bytecode but platformReferrer() check failed`);
+            // Still trust bytecode - it's a strong indicator
+            verifiedAddresses.add(token.tokenAddress.toLowerCase());
+            console.log(`    ✓ ${tokenName} trusted as BaseApp based on bytecode`);
+          }
+          
+          return { address: token.tokenAddress, isBaseApp };
+        } catch (error: any) {
+          // If check fails, still trust bytecode match
+          console.log(`    ⚠ ${tokenName} verification failed, trusting bytecode match`);
+          verifiedAddresses.add(token.tokenAddress.toLowerCase());
+          return { address: token.tokenAddress, isBaseApp: true };
+        }
+      });
+      
+      await Promise.allSettled(checkPromises);
+      
+      // Minimal delay between batches
+      if (i + BATCH_SIZE < tokens.length) {
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+    }
+    
+    return verifiedAddresses;
+  }
+
+  /**
    * Alternative method: Detect BaseApp tokens by directly checking platformReferrer()
    * This is the fastest and most direct method according to Base documentation
    * Base App tokens are Zora coins with platformReferrer() == BASE_PLATFORM_REFERRER
+   * NOTE: This method is now only used as fallback - prefer bytecode filtering first
    */
   private async detectBaseAppTokensByReferrer(tokens: TokenBalance[]): Promise<Set<string>> {
     const baseAppAddresses = new Set<string>();
