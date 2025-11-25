@@ -66,7 +66,7 @@ export function generateNonce(): string {
 }
 
 /**
- * Sign in with Base using standard EIP-1193 method
+ * Sign in with Base using wallet_connect with signInWithEthereum capabilities
  */
 export async function signInWithBase(nonce?: string): Promise<{
   address: string;
@@ -76,69 +76,35 @@ export async function signInWithBase(nonce?: string): Promise<{
   const authNonce = nonce || generateNonce();
 
   try {
-    // Try using window.base API first (if available)
-    if (typeof window !== 'undefined' && (window as any).base?.request) {
-      try {
-        const accounts = await (window as any).base.request({
-          method: 'eth_requestAccounts',
-        });
-        
-        if (accounts && accounts.length > 0) {
-          const address = accounts[0];
-          const domain = window.location.host;
-          const origin = window.location.origin;
-          const message = `${domain} wants you to sign in with your Ethereum account:
-${address}
-
-URI: ${origin}
-Version: 1
-Chain ID: 8453
-Nonce: ${authNonce}
-Issued At: ${new Date().toISOString()}`;
-
-          const signature = await (window as any).base.request({
-            method: 'personal_sign',
-            params: [message, address],
-          });
-
-          return { address, message, signature };
-        }
-      } catch (windowBaseError) {
-        console.warn('window.base.request failed, trying provider:', windowBaseError);
-      }
-    }
-
-    // Fallback to provider
+    // Get provider from Base Account SDK
     const provider = getBaseAccountProvider();
     
-    // Request accounts using standard EIP-1193 method
-    const accounts = await provider.request({
-      method: 'eth_requestAccounts',
+    // Use wallet_connect method with signInWithEthereum capabilities
+    const authResult = await provider.request({
+      method: 'wallet_connect',
+      params: [{
+        version: '1',
+        capabilities: {
+          signInWithEthereum: {
+            nonce: authNonce,
+            chainId: '0x2105', // Base Mainnet - 8453
+          },
+        },
+      }],
     });
 
+    const { accounts } = authResult;
+    
     if (!accounts || accounts.length === 0) {
       throw new Error('No accounts returned from provider');
     }
 
-    const address = accounts[0];
+    const { address, capabilities } = accounts[0];
+    const { message, signature } = capabilities?.signInWithEthereum || {};
 
-    // Create SIWE message
-    const domain = typeof window !== 'undefined' ? window.location.host : 'localhost';
-    const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
-    const message = `${domain} wants you to sign in with your Ethereum account:
-${address}
-
-URI: ${origin}
-Version: 1
-Chain ID: 8453
-Nonce: ${authNonce}
-Issued At: ${new Date().toISOString()}`;
-
-    // Sign the message
-    const signature = await provider.request({
-      method: 'personal_sign',
-      params: [message, address],
-    });
+    if (!address || !message || !signature) {
+      throw new Error('Invalid authentication response from Base Account');
+    }
 
     return { address, message, signature };
   } catch (error: any) {
@@ -149,9 +115,40 @@ Issued At: ${new Date().toISOString()}`;
       throw new Error('User rejected the connection request');
     }
     
-    // Handle method not supported
+    // Handle method not supported - fallback to standard connection
     if (error.message?.includes('not supported') || error.message?.includes('Method not found')) {
-      throw new Error('Wallet connection method not supported. Please make sure you have Base app or extension installed.');
+      // Fallback to standard EIP-1193 method
+      try {
+        const provider = getBaseAccountProvider();
+        const accounts = await provider.request({
+          method: 'eth_requestAccounts',
+        });
+
+        if (!accounts || accounts.length === 0) {
+          throw new Error('No accounts returned');
+        }
+
+        const address = accounts[0];
+        const domain = typeof window !== 'undefined' ? window.location.host : 'localhost';
+        const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
+        const message = `${domain} wants you to sign in with your Ethereum account:
+${address}
+
+URI: ${origin}
+Version: 1
+Chain ID: 8453
+Nonce: ${authNonce}
+Issued At: ${new Date().toISOString()}`;
+
+        const signature = await provider.request({
+          method: 'personal_sign',
+          params: [message, address],
+        });
+
+        return { address, message, signature };
+      } catch (fallbackError: any) {
+        throw new Error('Wallet connection method not supported. Please make sure you have Base app or extension installed.');
+      }
     }
     
     throw new Error(error.message || 'Failed to sign in with Base');

@@ -1,4 +1,7 @@
-import React, { useState, useEffect } from 'react';
+'use client';
+
+import { useState, useEffect } from 'react';
+import { initializeBaseAccount, signInWithBase } from '@/lib/baseAccount';
 import { ethers } from 'ethers';
 
 interface WalletConnectProps {
@@ -9,6 +12,7 @@ export default function WalletConnect({ onConnect }: WalletConnectProps) {
   const [address, setAddress] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sdkInitialized, setSdkInitialized] = useState(false);
   const [hasEthereum, setHasEthereum] = useState(false);
 
   useEffect(() => {
@@ -16,6 +20,20 @@ export default function WalletConnect({ onConnect }: WalletConnectProps) {
     if (typeof window !== 'undefined') {
       if (window.ethereum) {
         setHasEthereum(true);
+      }
+      
+      // Try to initialize Base Account SDK (optional)
+      if ((window as any).createBaseAccountSDK && !sdkInitialized) {
+        try {
+          initializeBaseAccount({
+            appName: "BasePost's portfolio screen",
+            appLogoUrl: 'https://base.org/logo.png',
+          });
+          setSdkInitialized(true);
+          console.log('Base Account SDK initialized');
+        } catch (err) {
+          console.warn('Base Account SDK initialization failed (optional):', err);
+        }
       }
     }
 
@@ -25,18 +43,52 @@ export default function WalletConnect({ onConnect }: WalletConnectProps) {
       setAddress(savedAddress);
       onConnect(savedAddress);
     }
-  }, [onConnect]);
+  }, [onConnect, sdkInitialized]);
 
-  const connectWallet = async () => {
+  const handleSignIn = async () => {
     try {
       setConnecting(true);
       setError(null);
 
-      if (typeof window === 'undefined' || !window.ethereum) {
-        throw new Error('No wallet found. Please install MetaMask, Coinbase Wallet, or another EVM-compatible wallet.');
+      // Try Base Account first (Sign in with Base) if SDK is available
+      if (typeof window !== 'undefined' && (window as any).createBaseAccountSDK) {
+        try {
+          console.log('Trying Sign in with Base...');
+          
+          // Initialize Base Account SDK if not already initialized
+          if (!sdkInitialized) {
+            initializeBaseAccount({
+              appName: "BasePost's portfolio screen",
+              appLogoUrl: 'https://base.org/logo.png',
+            });
+            setSdkInitialized(true);
+          }
+          
+          // Perform SIWE authentication
+          const { address: userAddress, signature } = await signInWithBase();
+
+          if (userAddress) {
+            console.log('Signed in with Base:', userAddress);
+            setAddress(userAddress);
+            localStorage.setItem('walletAddress', userAddress);
+            if (signature) {
+              localStorage.setItem('walletSignature', signature);
+            }
+            onConnect(userAddress);
+            return;
+          }
+        } catch (baseError: any) {
+          console.warn('Base Account sign-in failed, trying standard wallet:', baseError);
+          // Fall through to standard wallet connection
+        }
       }
 
-      console.log('Connecting wallet...');
+      // Fallback to standard wallets
+      if (!window.ethereum) {
+        throw new Error('No wallet found. Please install MetaMask, Coinbase Wallet, or Base extension.');
+      }
+
+      console.log('Connecting via standard wallet...');
       
       // Request account access
       const provider = new ethers.BrowserProvider(window.ethereum);
@@ -94,7 +146,7 @@ export default function WalletConnect({ onConnect }: WalletConnectProps) {
       if (errorMessage.includes('user rejected') || errorMessage.includes('User denied') || errorMessage.includes('rejected')) {
         setError('Connection rejected. Please approve the connection request.');
       } else if (errorMessage.includes('No wallet found')) {
-        setError('No wallet found. Please install MetaMask or Coinbase Wallet.');
+        setError('No wallet found. Please install MetaMask, Coinbase Wallet, or Base extension.');
       } else {
         setError(`Connection failed: ${errorMessage}`);
       }
@@ -103,7 +155,7 @@ export default function WalletConnect({ onConnect }: WalletConnectProps) {
     }
   };
 
-  const disconnect = () => {
+  const handleDisconnect = () => {
     setAddress(null);
     localStorage.removeItem('walletAddress');
     localStorage.removeItem('walletSignature');
@@ -120,7 +172,7 @@ export default function WalletConnect({ onConnect }: WalletConnectProps) {
           </span>
         </div>
         <button
-          onClick={disconnect}
+          onClick={handleDisconnect}
           className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg border border-red-500/50 transition-all duration-200 text-sm font-medium"
         >
           Disconnect
@@ -132,20 +184,20 @@ export default function WalletConnect({ onConnect }: WalletConnectProps) {
   return (
     <div>
       <button
-        onClick={connectWallet}
-        disabled={connecting || !hasEthereum}
+        onClick={handleSignIn}
+        disabled={connecting || (!hasEthereum && !sdkInitialized)}
         className="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        {connecting ? 'Connecting...' : 'Connect Wallet'}
+        {connecting ? 'Connecting...' : 'Sign in with Base'}
       </button>
       {error && (
         <div className="mt-3 bg-red-500/20 border border-red-500/50 rounded-lg p-3 text-red-200 text-sm">
           {error}
         </div>
       )}
-      {!hasEthereum && !error && (
+      {!hasEthereum && !sdkInitialized && !error && (
         <div className="mt-3 bg-yellow-500/20 border border-yellow-500/50 rounded-lg p-3 text-yellow-200 text-sm">
-          No wallet detected. Please install MetaMask or Coinbase Wallet.
+          No wallet detected. Please install MetaMask, Coinbase Wallet, or Base extension.
         </div>
       )}
     </div>
