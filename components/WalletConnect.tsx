@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { signInWithBase, initializeBaseAccount } from '@/lib/baseAccount';
 import { ethers } from 'ethers';
 
 interface WalletConnectProps {
@@ -10,23 +9,14 @@ export default function WalletConnect({ onConnect }: WalletConnectProps) {
   const [address, setAddress] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [sdkInitialized, setSdkInitialized] = useState(false);
   const [hasEthereum, setHasEthereum] = useState(false);
 
   useEffect(() => {
     // Check for wallet availability
     if (typeof window !== 'undefined') {
-      // Check for standard EVM wallet (MetaMask, Coinbase Wallet, etc.)
       if (window.ethereum) {
         setHasEthereum(true);
       }
-      // Also check if Base Account SDK is available (as fallback)
-      else if ((window as any).createBaseAccountSDK) {
-        setHasEthereum(true); // Enable button even if only Base Account SDK is available
-      }
-
-      // Base Account SDK is loaded but not initialized automatically
-      // It will be initialized only if needed (as fallback when standard wallet not available)
     }
 
     // Check for saved address
@@ -42,95 +32,60 @@ export default function WalletConnect({ onConnect }: WalletConnectProps) {
       setConnecting(true);
       setError(null);
 
-      if (typeof window === 'undefined') {
-        throw new Error('Window is not available');
+      if (typeof window === 'undefined' || !window.ethereum) {
+        throw new Error('No wallet found. Please install MetaMask, Coinbase Wallet, or another EVM-compatible wallet.');
       }
 
-      // Try standard EVM wallet first (MetaMask, Coinbase Wallet, etc.)
-      if (window.ethereum) {
+      console.log('Connecting wallet...');
+      
+      // Request account access
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      
+      // Request accounts
+      await provider.send('eth_requestAccounts', []);
+      
+      // Get signer and address
+      const signer = await provider.getSigner();
+      const userAddress = await signer.getAddress();
+      
+      // Switch to Base network if needed
+      const network = await provider.getNetwork();
+      const BASE_CHAIN_ID = BigInt(8453); // Base Mainnet
+      
+      if (network.chainId !== BASE_CHAIN_ID) {
         try {
-              // Request account access
-          const provider = new ethers.BrowserProvider(window.ethereum);
-          
-          // Request accounts
-          await provider.send('eth_requestAccounts', []);
-          
-          // Get signer and address
-          const signer = await provider.getSigner();
-          const userAddress = await signer.getAddress();
-          
-          // Switch to Base network if needed
-          const network = await provider.getNetwork();
-          const BASE_CHAIN_ID = BigInt(8453); // Base Mainnet
-          
-          if (network.chainId !== BASE_CHAIN_ID) {
-            try {
-              await window.ethereum.request({
-                method: 'wallet_switchEthereumChain',
-                params: [{ chainId: '0x2105' }], // Base Mainnet
-              });
-            } catch (switchError: any) {
-              // If chain doesn't exist, add it
-              if (switchError.code === 4902) {
-                await window.ethereum.request({
-                  method: 'wallet_addEthereumChain',
-                  params: [{
-                    chainId: '0x2105',
-                    chainName: 'Base',
-                    nativeCurrency: {
-                      name: 'ETH',
-                      symbol: 'ETH',
-                      decimals: 18,
-                    },
-                    rpcUrls: ['https://mainnet.base.org'],
-                    blockExplorerUrls: ['https://basescan.org'],
-                  }],
-                });
-              } else {
-                throw switchError;
-              }
-            }
-          }
-
-          console.log('Connected via standard wallet:', userAddress);
-          
-          setAddress(userAddress);
-          localStorage.setItem('walletAddress', userAddress);
-          onConnect(userAddress);
-          return;
-        } catch (walletError: any) {
-          console.warn('Standard wallet connection failed, trying Base Account SDK:', walletError);
-          // Fall through to Base Account SDK
-        }
-      }
-
-      // Fallback to Base Account SDK (only if standard wallet not available or failed)
-      if (sdkInitialized || (window as any).createBaseAccountSDK) {
-        try {
-          console.log('Trying Base Account SDK...');
-          if (!sdkInitialized) {
-            initializeBaseAccount({
-              appName: "BasePost's portfolio screen",
-              appLogoUrl: 'https://base.org/logo.png',
+          await window.ethereum.request({
+            method: 'wallet_switchEthereumChain',
+            params: [{ chainId: '0x2105' }], // Base Mainnet
+          });
+        } catch (switchError: any) {
+          // If chain doesn't exist, add it
+          if (switchError.code === 4902) {
+            await window.ethereum.request({
+              method: 'wallet_addEthereumChain',
+              params: [{
+                chainId: '0x2105',
+                chainName: 'Base',
+                nativeCurrency: {
+                  name: 'ETH',
+                  symbol: 'ETH',
+                  decimals: 18,
+                },
+                rpcUrls: ['https://mainnet.base.org'],
+                blockExplorerUrls: ['https://basescan.org'],
+              }],
             });
-            setSdkInitialized(true);
+          } else {
+            throw switchError;
           }
-          
-          const { address: userAddress } = await signInWithBase();
-          console.log('Connected via Base Account SDK:', userAddress);
-          
-          setAddress(userAddress);
-          localStorage.setItem('walletAddress', userAddress);
-          onConnect(userAddress);
-          return;
-        } catch (baseError: any) {
-          console.error('Base Account SDK connection failed:', baseError);
-          throw new Error('Failed to connect wallet. Please make sure you have a wallet installed.');
         }
       }
 
-      // No wallet found
-      throw new Error('No wallet found. Please install MetaMask, Coinbase Wallet, or another EVM-compatible wallet.');
+      console.log('Connected wallet:', userAddress);
+      
+      setAddress(userAddress);
+      localStorage.setItem('walletAddress', userAddress);
+      onConnect(userAddress);
     } catch (err: any) {
       const errorMessage = err.message || 'Failed to connect wallet';
       setError(errorMessage);
@@ -190,7 +145,7 @@ export default function WalletConnect({ onConnect }: WalletConnectProps) {
       )}
       {!hasEthereum && !error && (
         <div className="mt-3 bg-yellow-500/20 border border-yellow-500/50 rounded-lg p-3 text-yellow-200 text-sm">
-          No wallet detected. Please install MetaMask, Coinbase Wallet, or Base extension.
+          No wallet detected. Please install MetaMask or Coinbase Wallet.
         </div>
       )}
     </div>

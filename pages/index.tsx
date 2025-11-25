@@ -14,7 +14,7 @@ export default function Home() {
   const [cardImageUrl, setCardImageUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    // Base Account SDK initialization is handled in WalletConnect component
+    // Wallet connection is handled in WalletConnect component
   }, []);
 
   const handleWalletConnect = (address: string) => {
