@@ -1,11 +1,5 @@
-// Try to import from NPM package, but fallback to CDN
-let createBaseAccountSDK: any;
-try {
-  createBaseAccountSDK = require('@base-org/account').createBaseAccountSDK;
-} catch {
-  // Will use window.createBaseAccountSDK if available
-  createBaseAccountSDK = null;
-}
+// Base Account SDK is loaded via CDN in _document.tsx
+// The SDK is available as window.createBaseAccountSDK on the client side
 
 export interface BaseAccountConfig {
   appName: string;
@@ -18,7 +12,7 @@ let provider: any = null;
 /**
  * Initialize Base Account SDK
  * Should be called on the client side only
- * Works with both NPM package and CDN
+ * SDK is loaded via CDN in _document.tsx
  */
 export function initializeBaseAccount(config: BaseAccountConfig) {
   if (typeof window === 'undefined') {
@@ -26,12 +20,12 @@ export function initializeBaseAccount(config: BaseAccountConfig) {
   }
 
   if (!baseAccountSDK) {
-    // Try to use CDN version first (window.createBaseAccountSDK), then fallback to NPM
-    let sdkFactory = (window as any).createBaseAccountSDK || createBaseAccountSDK;
+    // Use CDN version (window.createBaseAccountSDK)
+    const sdkFactory = (window as any).createBaseAccountSDK;
     
     if (!sdkFactory) {
       throw new Error(
-        'Base Account SDK not found. Make sure the SDK script is loaded via CDN or the NPM package is installed.'
+        'Base Account SDK not found. Make sure the SDK script is loaded via CDN in _document.tsx.'
       );
     }
 
