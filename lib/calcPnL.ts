@@ -62,7 +62,7 @@ export class PnLCalculator {
     balance: string,
     currentPrice: PriceData,
     tokenDecimals: number = 18
-  ): PostAnalytics {
+  ): Promise<PostAnalytics> {
     const buys = posts.filter((p) => p.type === 'buy' || p.type === 'mint');
     const sells = posts.filter((p) => p.type === 'sell');
 
