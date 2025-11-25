@@ -1,11 +1,17 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { initializeBaseAccount, signInWithBase } from '@/lib/baseAccount';
+import { initializeBaseAccount, signInWithBase, getUserProfile } from '@/lib/baseAccount';
 import { ethers } from 'ethers';
 
 interface WalletConnectProps {
-  onConnect: (address: string) => void;
+  onConnect: (address: string, userProfile?: {
+    fid?: number;
+    username?: string;
+    displayName?: string;
+    pfpUrl?: string;
+    bio?: string;
+  }) => void;
 }
 
 export default function WalletConnect({ onConnect }: WalletConnectProps) {
@@ -74,7 +80,27 @@ export default function WalletConnect({ onConnect }: WalletConnectProps) {
             if (signature) {
               localStorage.setItem('walletSignature', signature);
             }
-            onConnect(userAddress);
+            
+            // Try to get user profile from Base Account SDK
+            try {
+              const userProfile = await getUserProfile();
+              if (userProfile) {
+                console.log('Got user profile:', userProfile);
+                // Store profile data
+                if (userProfile.pfpUrl) {
+                  localStorage.setItem('userPfpUrl', userProfile.pfpUrl);
+                }
+                if (userProfile.displayName) {
+                  localStorage.setItem('userDisplayName', userProfile.displayName);
+                } else if (userProfile.username) {
+                  localStorage.setItem('userDisplayName', userProfile.username);
+                }
+              }
+              onConnect(userAddress, userProfile || undefined);
+            } catch (profileError) {
+              console.warn('Failed to get user profile:', profileError);
+              onConnect(userAddress);
+            }
             return;
           }
         } catch (baseError: any) {
@@ -137,7 +163,15 @@ export default function WalletConnect({ onConnect }: WalletConnectProps) {
       
       setAddress(userAddress);
       localStorage.setItem('walletAddress', userAddress);
-      onConnect(userAddress);
+      
+      // Try to get user profile (may not be available for standard wallets)
+      try {
+        const userProfile = await getUserProfile();
+        onConnect(userAddress, userProfile || undefined);
+      } catch (profileError) {
+        // Profile not available for standard wallets - this is normal
+        onConnect(userAddress);
+      }
     } catch (err: any) {
       const errorMessage = err.message || 'Failed to connect wallet';
       setError(errorMessage);

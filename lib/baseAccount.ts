@@ -215,3 +215,58 @@ export async function getPaymentStatus(params: {
   }
 }
 
+/**
+ * Get user profile data from Base Account SDK context
+ * In Mini Apps, access user profile data via sdk.context
+ */
+export async function getUserProfile(): Promise<{
+  fid?: number;
+  username?: string;
+  displayName?: string;
+  pfpUrl?: string;
+  bio?: string;
+} | null> {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  try {
+    // Get SDK instance
+    if (!baseAccountSDK) {
+      console.warn('Base Account SDK not initialized');
+      return null;
+    }
+
+    // Access context from SDK (for Mini Apps)
+    if (typeof baseAccountSDK.context === 'function') {
+      const context = await baseAccountSDK.context();
+      if (context?.user) {
+        console.log('User profile from Base Account SDK:', context.user);
+        return {
+          fid: context.user.fid,
+          username: context.user.username,
+          displayName: context.user.displayName,
+          pfpUrl: context.user.pfpUrl,
+          bio: context.user.bio,
+        };
+      }
+    }
+
+    // Try alternative: check if context is already available
+    if (baseAccountSDK.context?.user) {
+      return {
+        fid: baseAccountSDK.context.user.fid,
+        username: baseAccountSDK.context.user.username,
+        displayName: baseAccountSDK.context.user.displayName,
+        pfpUrl: baseAccountSDK.context.user.pfpUrl,
+        bio: baseAccountSDK.context.user.bio,
+      };
+    }
+
+    return null;
+  } catch (error: any) {
+    console.warn('Failed to get user profile from Base Account SDK:', error);
+    return null;
+  }
+}
+

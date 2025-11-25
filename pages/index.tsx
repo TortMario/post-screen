@@ -9,6 +9,13 @@ import { AnalysisResult } from '@/lib/analyze';
 
 export default function Home() {
   const [walletAddress, setWalletAddress] = useState<string>('');
+  const [userProfile, setUserProfile] = useState<{
+    fid?: number;
+    username?: string;
+    displayName?: string;
+    pfpUrl?: string;
+    bio?: string;
+  } | null>(null);
   const [loading, setLoading] = useState(false);
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -18,11 +25,22 @@ export default function Home() {
     // Wallet connection is handled in WalletConnect component
   }, []);
 
-  const handleWalletConnect = (address: string) => {
+  const handleWalletConnect = (
+    address: string,
+    profile?: {
+      fid?: number;
+      username?: string;
+      displayName?: string;
+      pfpUrl?: string;
+      bio?: string;
+    }
+  ) => {
     setWalletAddress(address);
+    setUserProfile(profile || null);
     if (!address) {
       setAnalysis(null);
       setCardImageUrl(null);
+      setUserProfile(null);
     }
   };
 
@@ -210,7 +228,7 @@ BaseApp posts are tokens created on Base App platform. Make sure you're analyzin
         body: JSON.stringify({
           portfolio,
           walletAddress,
-          username: undefined,
+          username: userProfile?.displayName || userProfile?.username || undefined,
         }),
       });
 
@@ -269,7 +287,7 @@ BaseApp posts are tokens created on Base App platform. Make sure you're analyzin
             
             {walletAddress && (
               <div className="mt-4 mb-4">
-                <UserProfile address={walletAddress} />
+                <UserProfile address={walletAddress} userProfile={userProfile} />
               </div>
             )}
             
