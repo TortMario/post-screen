@@ -6,6 +6,7 @@ import PostList from '@/components/PostList';
 import PortfolioChart from '@/components/PortfolioChart';
 import { PortfolioAnalytics } from '@/lib/calcPnL';
 import { AnalysisResult } from '@/lib/analyze';
+import { getMiniAppUserProfile, isInMiniApp } from '@/lib/miniapp';
 
 export default function Home() {
   const [walletAddress, setWalletAddress] = useState<string>('');
@@ -22,7 +23,22 @@ export default function Home() {
   const [cardImageUrl, setCardImageUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    // Wallet connection is handled in WalletConnect component
+    // Check if we're in a Mini App and get user profile on mount
+    (async () => {
+      try {
+        const inMiniApp = await isInMiniApp();
+        if (inMiniApp) {
+          console.log('✅ App is running as Mini App');
+          const userProfile = await getMiniAppUserProfile();
+          if (userProfile) {
+            console.log('✅ Got user profile from Mini App on mount:', userProfile);
+            setUserProfile(userProfile);
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to check Mini App status on mount:', err);
+      }
+    })();
   }, []);
 
   const handleWalletConnect = (

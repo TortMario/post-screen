@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { initializeBaseAccount, signInWithBase, getUserProfile } from '@/lib/baseAccount';
+import { getMiniAppUserProfile, isInMiniApp } from '@/lib/miniapp';
 import { ethers } from 'ethers';
 
 interface WalletConnectProps {
@@ -41,13 +42,46 @@ export default function WalletConnect({ onConnect }: WalletConnectProps) {
           console.warn('Base Account SDK initialization failed (optional):', err);
         }
       }
+
+      // Check if we're in a Mini App and get user profile
+      (async () => {
+        try {
+          const inMiniApp = await isInMiniApp();
+          if (inMiniApp) {
+            console.log('✅ App is running as Mini App');
+            const userProfile = await getMiniAppUserProfile();
+            if (userProfile) {
+              console.log('✅ Got user profile from Mini App:', userProfile);
+              // Store profile data
+              if (userProfile.pfpUrl) {
+                localStorage.setItem('userPfpUrl', userProfile.pfpUrl);
+              }
+              if (userProfile.displayName) {
+                localStorage.setItem('userDisplayName', userProfile.displayName);
+              } else if (userProfile.username) {
+                localStorage.setItem('userDisplayName', userProfile.username);
+              }
+            }
+          }
+        } catch (err) {
+          console.warn('Failed to check Mini App status:', err);
+        }
+      })();
     }
 
     // Check for saved address
     const savedAddress = localStorage.getItem('walletAddress');
     if (savedAddress) {
       setAddress(savedAddress);
-      onConnect(savedAddress);
+      // Try to get user profile when loading saved address
+      (async () => {
+        try {
+          const userProfile = await getUserProfile();
+          onConnect(savedAddress, userProfile || undefined);
+        } catch {
+          onConnect(savedAddress);
+        }
+      })();
     }
   }, [onConnect, sdkInitialized]);
 
@@ -81,11 +115,18 @@ export default function WalletConnect({ onConnect }: WalletConnectProps) {
               localStorage.setItem('walletSignature', signature);
             }
             
-            // Try to get user profile from Base Account SDK
+            // Try to get user profile (from Mini App SDK or Base Account SDK)
             try {
-              const userProfile = await getUserProfile();
+              // First try Mini App SDK (for Mini Apps)
+              let userProfile = await getMiniAppUserProfile();
+              
+              // Fallback to Base Account SDK
+              if (!userProfile) {
+                userProfile = await getUserProfile();
+              }
+              
               if (userProfile) {
-                console.log('Got user profile:', userProfile);
+                console.log('✅ Got user profile:', userProfile);
                 // Store profile data
                 if (userProfile.pfpUrl) {
                   localStorage.setItem('userPfpUrl', userProfile.pfpUrl);
@@ -166,7 +207,14 @@ export default function WalletConnect({ onConnect }: WalletConnectProps) {
       
       // Try to get user profile (may not be available for standard wallets)
       try {
-        const userProfile = await getUserProfile();
+        // First try Mini App SDK (for Mini Apps)
+        let userProfile = await getMiniAppUserProfile();
+        
+        // Fallback to Base Account SDK
+        if (!userProfile) {
+          userProfile = await getUserProfile();
+        }
+        
         onConnect(userAddress, userProfile || undefined);
       } catch (profileError) {
         // Profile not available for standard wallets - this is normal

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { getBaseName, getAvatarUrl } from '@/lib/getAvatar';
 import { getUserProfile } from '@/lib/baseAccount';
+import { getMiniAppUserProfile } from '@/lib/miniapp';
 
 interface UserProfileProps {
   address: string;
@@ -23,24 +24,41 @@ export default function UserProfile({ address, userProfile: propUserProfile }: U
 
   useEffect(() => {
     const fetchUserData = async () => {
-      if (!address || !address.startsWith('0x')) return;
+      if (!address || !address.startsWith('0x')) {
+        console.log('⚠️ UserProfile: No valid address provided');
+        return;
+      }
       
+      console.log('🔍 UserProfile: Fetching user data for address:', address);
       setIsLoading(true);
       try {
         // Use profile from props if available, otherwise try to get from SDK
         let userProfile = propUserProfile;
+        console.log('📦 UserProfile: propUserProfile:', propUserProfile);
         
         if (!userProfile) {
-          userProfile = await getUserProfile();
+          console.log('📦 UserProfile: propUserProfile is null, trying to get from SDK...');
+          // First try Mini App SDK (for Mini Apps - recommended)
+          userProfile = await getMiniAppUserProfile();
+          console.log('📦 UserProfile: getMiniAppUserProfile result:', userProfile);
+          
+          // Fallback to Base Account SDK
+          if (!userProfile) {
+            console.log('📦 UserProfile: Trying Base Account SDK...');
+            userProfile = await getUserProfile();
+            console.log('📦 UserProfile: getUserProfile result:', userProfile);
+          }
         }
         
         if (userProfile) {
-          console.log('✅ Using user profile:', userProfile);
+          console.log('✅ UserProfile: Using user profile:', userProfile);
           
           // Use profile data from Base App
           if (userProfile.pfpUrl) {
+            console.log('✅ UserProfile: Setting avatar from pfpUrl:', userProfile.pfpUrl);
             setAvatarUrl(userProfile.pfpUrl);
           } else {
+            console.log('⚠️ UserProfile: No pfpUrl, falling back to ENS/generated avatar');
             // Fallback to ENS avatar or generated avatar
             const avatar = await getAvatarUrl(address);
             setAvatarUrl(avatar);
@@ -48,11 +66,16 @@ export default function UserProfile({ address, userProfile: propUserProfile }: U
           
           // Use displayName or username from Base App
           if (userProfile.displayName) {
+            console.log('✅ UserProfile: Setting displayName:', userProfile.displayName);
             setDisplayName(userProfile.displayName);
           } else if (userProfile.username) {
+            console.log('✅ UserProfile: Setting displayName from username:', userProfile.username);
             setDisplayName(userProfile.username);
+          } else {
+            console.log('⚠️ UserProfile: No displayName or username in profile');
           }
         } else {
+          console.log('⚠️ UserProfile: No user profile found, falling back to Base name/ENS');
           // Fallback: get Base name and avatar via ENS
           const [name, avatar] = await Promise.all([
             getBaseName(address),
@@ -60,15 +83,17 @@ export default function UserProfile({ address, userProfile: propUserProfile }: U
           ]);
           
           if (name) {
+            console.log('✅ UserProfile: Got Base name:', name);
             setBasename(name);
           }
           
           if (avatar) {
+            console.log('✅ UserProfile: Got avatar:', avatar);
             setAvatarUrl(avatar);
           }
         }
       } catch (error: any) {
-        console.warn('Error fetching user data (non-critical):', error.message);
+        console.error('❌ UserProfile: Error fetching user data:', error);
         // Fallback to generated avatar
         const fallbackAvatar = await getAvatarUrl(address);
         setAvatarUrl(fallbackAvatar);

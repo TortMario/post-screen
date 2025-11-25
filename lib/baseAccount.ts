@@ -217,7 +217,8 @@ export async function getPaymentStatus(params: {
 
 /**
  * Get user profile data from Base Account SDK context
- * In Mini Apps, access user profile data via sdk.context
+ * Note: For Mini Apps, use getMiniAppUserProfile() from lib/miniapp.ts instead
+ * This function is kept for backward compatibility with Base Account SDK
  */
 export async function getUserProfile(): Promise<{
   fid?: number;
@@ -231,13 +232,20 @@ export async function getUserProfile(): Promise<{
   }
 
   try {
-    // Get SDK instance
+    // First, try to get profile from Mini App SDK (recommended for Mini Apps)
+    const { getMiniAppUserProfile } = await import('./miniapp');
+    const miniAppProfile = await getMiniAppUserProfile();
+    if (miniAppProfile) {
+      return miniAppProfile;
+    }
+
+    // Fallback: Get SDK instance
     if (!baseAccountSDK) {
       console.warn('Base Account SDK not initialized');
       return null;
     }
 
-    // Access context from SDK (for Mini Apps)
+    // Access context from SDK (for Base Account SDK)
     if (typeof baseAccountSDK.context === 'function') {
       const context = await baseAccountSDK.context();
       if (context?.user) {
