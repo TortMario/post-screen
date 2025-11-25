@@ -187,7 +187,7 @@ BaseApp posts are tokens created on Base App platform. Make sure you're analyzin
           err.message?.includes('504') ||
           err.message?.includes('Gateway Timeout')) {
         console.error('Request timeout or connection error:', err);
-        setError('Request timed out (504 Gateway Timeout). The analysis is taking too long.\n\nPossible solutions:\n1. Your wallet has too many tokens - the system checks up to 50 tokens\n2. Network issues - try again in a few moments\n3. Server is overloaded - try again later\n\nTip: If your wallet has many tokens, consider using a wallet with fewer tokens for testing.');
+        setError('Request timed out (504 Gateway Timeout). The analysis is taking too long.\n\nPossible solutions:\n1. Network issues - try again in a few moments\n2. Server is overloaded - try again later\n3. Your wallet has many tokens - the system checks all tokens which may take time\n\nNote: The system checks all tokens in your wallet. If you have many tokens, this may take longer.');
       } else if (err.message?.includes('invalid response') || err.message?.includes('not valid JSON')) {
         console.error('Invalid response error:', err);
         setError('Server returned an invalid response. This usually means the request timed out on the server side.\n\nTry again in a few moments, or check if your wallet has too many tokens.');

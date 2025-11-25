@@ -568,19 +568,13 @@ export class AnalyticsService {
     console.log('This is the fastest method - directly checks platformReferrer() on each token');
     console.log('Base App tokens are Zora coins with platformReferrer() == BASE_PLATFORM_REFERRER');
     
-    // Limit the number of tokens to check to avoid timeout
-    // Check first 30 tokens to stay well within Vercel's timeout limits (60 seconds)
-    // Each token check can take 1-2 seconds, so 30 tokens = ~30-60 seconds max
-    const MAX_TOKENS_TO_CHECK = 30;
-    const tokensToCheck = tokens.slice(0, MAX_TOKENS_TO_CHECK);
-    
-    if (tokens.length > MAX_TOKENS_TO_CHECK) {
-      console.log(`⚠️ Limiting check to first ${MAX_TOKENS_TO_CHECK} tokens (out of ${tokens.length}) to avoid timeout`);
-      console.log(`⚠️ If you need to check all tokens, consider splitting the analysis or using a wallet with fewer tokens`);
-    }
+    // Check ALL tokens - no limit
+    // Optimized for speed: larger batches, shorter delays, parallel processing
+    const tokensToCheck = tokens; // Check all tokens
     
     // Check tokens in batches (this is fast since we're just calling a view function)
-    const BATCH_SIZE = 15; // Increased batch size for faster processing
+    // Increased batch size and reduced delays for faster processing
+    const BATCH_SIZE = 25; // Larger batches for faster processing
     const totalBatches = Math.ceil(tokensToCheck.length / BATCH_SIZE);
     
     for (let i = 0; i < tokensToCheck.length; i += BATCH_SIZE) {
@@ -598,22 +592,16 @@ export class AnalyticsService {
           let isBaseApp = false;
           
           try {
+            // Use only direct platformReferrer check (fastest method)
+            // Skip pool-based check to maximize speed - if platformReferrer() doesn't exist, token is not a Zora coin
             isBaseApp = await Promise.race([
               isBaseAppTokenByReferrer(tokenAddress),
-              new Promise<boolean>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 8000))
+              new Promise<boolean>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000)) // Shorter timeout for speed
             ]);
-          } catch (directError: any) {
-            // If direct check fails or times out, try pool-based check
-            console.log(`    Direct check failed for ${tokenName}, trying pool-based check...`);
-            try {
-              isBaseApp = await Promise.race([
-                isBaseAppTokenByPoolCheck(tokenAddress),
-                new Promise<boolean>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 15000))
-              ]);
-            } catch (poolError: any) {
-              console.log(`    Pool check also failed for ${tokenName}: ${poolError.message}`);
-              isBaseApp = false;
-            }
+          } catch (error: any) {
+            // If check fails or times out, token is not a Base App token
+            // This is expected for non-Zora tokens (they don't have platformReferrer function)
+            isBaseApp = false;
           }
           
           if (isBaseApp) {
@@ -632,9 +620,9 @@ export class AnalyticsService {
       
       await Promise.allSettled(checkPromises);
       
-      // Small delay between batches to avoid rate limits
+      // Minimal delay between batches to avoid rate limits but maximize speed
       if (i + BATCH_SIZE < tokensToCheck.length) {
-        await new Promise(resolve => setTimeout(resolve, 100)); // Reduced delay for faster processing
+        await new Promise(resolve => setTimeout(resolve, 50)); // Minimal delay for maximum speed
       }
     }
     
