@@ -122,26 +122,44 @@ export class WalletService {
       
       const data = await response.json();
       console.log('=== Etherscan API V2 Response ===');
+      console.log('Full response:', JSON.stringify(data, null, 2));
       console.log('Status:', data.status);
       console.log('Message:', data.message);
       console.log('Result type:', typeof data.result);
       console.log('Result length:', Array.isArray(data.result) ? data.result.length : 'N/A');
+      console.log('API Key provided:', !!this.baseScanApiKey);
+      console.log('API Key length:', this.baseScanApiKey?.length || 0);
       
       // Check for V1 deprecation message
       if (data.message?.includes('deprecated V1 endpoint')) {
         console.error('Still using V1 endpoint! This should not happen with V2.');
       }
       
+      // Handle different response statuses
       if (data.status !== '1') {
         console.error('❌ Etherscan API V2 returned error:');
         console.error('  Status:', data.status);
         console.error('  Message:', data.message);
         console.error('  Result:', typeof data.result === 'string' ? data.result : JSON.stringify(data.result, null, 2).slice(0, 500));
         
+        // Check for specific error messages
+        const errorMsg = (data.message || '').toLowerCase();
+        const resultMsg = (typeof data.result === 'string' ? data.result : '').toLowerCase();
+        
+        if (errorMsg.includes('rate limit') || resultMsg.includes('rate limit') ||
+            errorMsg.includes('max rate limit') || resultMsg.includes('max rate limit')) {
+          console.error('⚠️ Rate limit exceeded. Please add a BaseScan API key or wait a few minutes.');
+        }
+        
+        if (errorMsg.includes('invalid api key') || resultMsg.includes('invalid api key') ||
+            errorMsg.includes('api key') || resultMsg.includes('api key')) {
+          console.error('⚠️ API key issue. Check if your BaseScan API key is valid.');
+        }
+        
         // If rate limited or no API key, try alternative method
-        if (data.message?.toLowerCase().includes('rate limit') || 
-            data.message?.toLowerCase().includes('invalid api key') ||
-            data.message?.toLowerCase().includes('max rate limit') ||
+        if (errorMsg.includes('rate limit') || 
+            errorMsg.includes('invalid api key') ||
+            errorMsg.includes('max rate limit') ||
             !this.baseScanApiKey) {
           console.warn('Trying alternative method: direct RPC token balance check...');
           return await this.getTokenBalancesViaRPC(address);
@@ -168,11 +186,25 @@ export class WalletService {
       }
       
       if (data.result.length === 0) {
-        console.warn('API returned empty array - no token transactions found');
+        console.warn('⚠️ API returned empty array - no token transactions found');
         console.warn('This might mean:');
-        console.warn('1. Wallet has no token transactions');
-        console.warn('2. API key has limited access');
+        console.warn('1. Wallet has no token transactions on Base network');
+        console.warn('2. API key has limited access (free tier may have restrictions)');
         console.warn('3. Address has no ERC-20 token activity');
+        console.warn('4. All transactions are outside the queried block range');
+        console.warn(`Checked address: ${address}`);
+        console.warn(`API endpoint: ${ETHERSCAN_API_V2}`);
+        console.warn(`Chain ID: ${BASE_CHAIN_ID}`);
+        console.warn(`API key present: ${!!this.baseScanApiKey}`);
+        
+        // Try alternative method as fallback
+        console.warn('Trying alternative RPC method to verify...');
+        const rpcResult = await this.getTokenBalancesViaRPC(address).catch(() => []);
+        if (rpcResult.length > 0) {
+          console.log(`✓ RPC method found ${rpcResult.length} tokens - API may have issues`);
+          return rpcResult;
+        }
+        
         return [];
       }
 
