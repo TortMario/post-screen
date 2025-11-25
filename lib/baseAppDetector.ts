@@ -57,11 +57,25 @@ export class BaseAppDetector {
 
         const codeLower = code.toLowerCase();
         
-        // Check full fingerprint (most accurate)
-        const hasBaseAppBytecode = codeLower === BASEAPP_FINGERPRINT_LOWER ||
-                                   codeLower.startsWith(BASEAPP_PREFIX_LOWER);
+        // Debug: log code length and first few bytes
+        if (code.length > 0) {
+          console.log(`  Token ${address.slice(0, 10)}... bytecode length: ${code.length}, starts with: ${code.slice(0, 50)}...`);
+          console.log(`  Expected prefix: ${BASEAPP_PREFIX_LOWER.slice(0, 50)}...`);
+        }
         
-        if (!hasBaseAppBytecode) {
+        // Check full fingerprint (most accurate)
+        const hasFullFingerprint = codeLower === BASEAPP_FINGERPRINT_LOWER;
+        const hasPrefix = codeLower.startsWith(BASEAPP_PREFIX_LOWER);
+        const hasBaseAppBytecode = hasFullFingerprint || hasPrefix;
+        
+        if (hasFullFingerprint) {
+          console.log(`  ✓ ${address.slice(0, 10)}... matches full BaseApp fingerprint`);
+        } else if (hasPrefix) {
+          console.log(`  ✓ ${address.slice(0, 10)}... matches BaseApp prefix`);
+        } else {
+          console.log(`  ✗ ${address.slice(0, 10)}... does NOT match BaseApp bytecode`);
+          console.log(`    Code starts with: ${codeLower.slice(0, 60)}`);
+          console.log(`    Expected starts: ${BASEAPP_PREFIX_LOWER.slice(0, 60)}`);
           this.codeCache.set(cacheKey, false);
           return false;
         }
@@ -123,15 +137,16 @@ export class BaseAppDetector {
       return results;
     }
     
-    console.log(`Checking bytecode for ${addresses.length} wallet tokens...`);
+    console.log(`\n=== Checking bytecode for ${addresses.length} wallet tokens ===`);
+    console.log(`Sample addresses: ${addresses.slice(0, 5).map(a => a.slice(0, 10) + '...').join(', ')}`);
     
     // Smaller batches and longer delays for mobile/network reliability
     // Detect mobile or slower connections
     const isMobile = typeof window !== 'undefined' && typeof navigator !== 'undefined' &&
                      (window.innerWidth < 768 || /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent));
     
-    const BATCH_SIZE = isMobile ? 3 : 5; // Smaller batches on mobile
-    const DELAY_MS = isMobile ? 500 : 200; // Longer delays on mobile
+    const BATCH_SIZE = isMobile ? 3 : 10; // Increased batch size for server-side
+    const DELAY_MS = isMobile ? 500 : 100; // Shorter delays for server-side
     
     for (let i = 0; i < addresses.length; i += BATCH_SIZE) {
       const batch = addresses.slice(i, i + BATCH_SIZE);

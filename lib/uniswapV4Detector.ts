@@ -486,16 +486,28 @@ export async function findPoolForToken(
  */
 export async function isBaseAppTokenByPool(tokenAddress: Address): Promise<boolean> {
   try {
+    console.log(`    [Pool Check] Looking for pool for token ${tokenAddress}...`);
     const poolData = await findPoolForToken(tokenAddress);
     
     if (!poolData) {
+      console.log(`    [Pool Check] No pool found for token ${tokenAddress}`);
       return false;
     }
 
+    console.log(`    [Pool Check] Found pool for ${tokenAddress}:`);
+    console.log(`      - Pool ID: ${poolData.poolId}`);
+    console.log(`      - Currency0: ${poolData.currency0.symbol} (${poolData.currency0.address})`);
+    console.log(`      - Currency1: ${poolData.currency1.symbol} (${poolData.currency1.address})`);
+    console.log(`      - Coin Type: ${poolData.coinType || 'N/A'}`);
+    console.log(`      - App Type: ${poolData.appType}`);
+    console.log(`      - Liquidity: ${poolData.liquidity.toString()}`);
+
     // Check if appType is TBA (Base App)
-    return poolData.appType === 'TBA';
+    const isBaseApp = poolData.appType === 'TBA';
+    console.log(`    [Pool Check] Token ${tokenAddress} is Base App: ${isBaseApp}`);
+    return isBaseApp;
   } catch (error) {
-    console.error(`Error checking if token ${tokenAddress} is Base App token:`, error);
+    console.error(`    [Pool Check] Error checking if token ${tokenAddress} is Base App token:`, error);
     return false;
   }
 }
