@@ -64,6 +64,25 @@ export default async function handler(
       console.error('2. Wallet has no tokens on Base network');
       console.error('3. API key is invalid or expired');
       console.error('4. Network connection issues');
+      console.error('5. BaseScan API V2 may be having issues');
+      
+      // Return a more helpful error response
+      return res.status(200).json({
+        ...result,
+        error: 'No tokens found',
+        errorDetails: {
+          message: 'No tokens were found in the wallet. This could be due to:',
+          reasons: [
+            'API rate limit - add NEXT_PUBLIC_BASESCAN_API_KEY to environment variables',
+            'Wallet has no tokens on Base network',
+            'API key is invalid or expired',
+            'Network connection issues',
+            'BaseScan API may be experiencing issues'
+          ],
+          hasApiKey: !!finalBaseScanKey,
+          walletAddress: address
+        }
+      });
     } else if (result.wallet.tokens.length > 0) {
       console.log('Sample tokens:', result.wallet.tokens.slice(0, 5).map(t => ({
         symbol: t.symbol,

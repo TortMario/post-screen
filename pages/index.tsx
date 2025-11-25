@@ -73,18 +73,33 @@ export default function Home() {
       console.log('Posts analyzed:', result.portfolio.countOfPostTokens);
       console.log('Full result:', result);
       
+      // Check if there's an error in the response
+      if ((result as any).error === 'No tokens found' && (result as any).errorDetails) {
+        const errorDetails = (result as any).errorDetails;
+        console.error('❌ No tokens found in wallet');
+        console.error('Error details:', errorDetails);
+        
+        const errorMessage = errorDetails.reasons?.join('\n') || 'No tokens found in wallet';
+        setError(`No tokens found.\n\n${errorMessage}\n\nWallet: ${errorDetails.walletAddress}\nAPI Key: ${errorDetails.hasApiKey ? 'Present' : 'Missing'}`);
+        setAnalysis(result);
+        return;
+      }
+      
       if (result.wallet.tokens.length === 0) {
         console.error('❌ No tokens found in wallet');
         console.error('This might mean:');
         console.error('1. API rate limiting - check if you have BaseScan API key');
         console.error('2. Wallet has no tokens on Base network');
         console.error('3. API key is invalid or missing');
+        console.error('4. BaseScan API may be experiencing issues');
         console.error('Check server logs for detailed API responses.');
         
         setError(`No tokens found. Possible reasons:
-1. API rate limit (add BaseScan API key to .env.local)
+1. API rate limit (add NEXT_PUBLIC_BASESCAN_API_KEY to environment variables)
 2. Wallet has no tokens on Base network
-3. Check console for detailed logs`);
+3. API key is invalid or missing
+4. BaseScan API may be experiencing issues
+5. Check server logs for detailed API responses`);
       } else {
         const tokensWithBalance = result.wallet.tokens.filter(t => parseFloat(t.balanceFormatted || '0') > 0);
         console.log(`✓ Found ${result.wallet.tokens.length} total tokens, ${tokensWithBalance.length} with balance > 0`);
