@@ -98,6 +98,18 @@ git push
 
 ## Troubleshooting
 
+### Vercel Authentication / Password Protection
+
+If you're being asked for Vercel authentication when accessing your deployed site:
+
+1. Go to your project in Vercel Dashboard
+2. Navigate to **Settings → Deployment Protection** (or **Settings → Security**)
+3. Disable **Password Protection** if enabled
+4. Disable **Vercel Authentication** if enabled
+5. Save changes
+
+Your application should be publicly accessible after disabling these settings.
+
 ### Build Error
 
 - Check logs in Vercel Dashboard
