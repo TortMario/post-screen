@@ -13,6 +13,23 @@ export interface MiniAppUserProfile {
   bio?: string;
 }
 
+export interface MiniAppContext {
+  user?: {
+    fid?: number;
+    username?: string;
+    displayName?: string;
+    pfpUrl?: string;
+    bio?: string;
+  };
+  client?: {
+    added?: boolean; // Whether user has added this Mini App
+  };
+  location?: string; // Where the Mini App was launched from
+  features?: {
+    [key: string]: boolean;
+  };
+}
+
 /**
  * Check if the app is opened as a Mini App
  */
@@ -87,8 +104,9 @@ export async function getMiniAppUserProfile(): Promise<MiniAppUserProfile | null
 
 /**
  * Get full Mini App context (user, location, client, features)
+ * According to Base documentation, this provides rich social context
  */
-export async function getMiniAppContext() {
+export async function getMiniAppContext(): Promise<MiniAppContext | null> {
   try {
     if (typeof window === 'undefined') {
       return null;
@@ -99,7 +117,35 @@ export async function getMiniAppContext() {
       return null;
     }
 
-    return await sdk.context;
+    const context = await sdk.context;
+    if (!context) {
+      return null;
+    }
+
+    // Extract and structure context according to Base documentation
+    const structuredContext: MiniAppContext = {
+      user: context.user ? {
+        fid: context.user.fid,
+        username: context.user.username,
+        displayName: context.user.displayName,
+        pfpUrl: context.user.pfpUrl,
+        bio: (context.user as any).bio,
+      } : undefined,
+      client: context.client ? {
+        added: context.client.added,
+      } : undefined,
+      location: (context as any).location,
+      features: (context as any).features,
+    };
+
+    console.log('📦 Full Mini App context:', {
+      hasUser: !!structuredContext.user,
+      fid: structuredContext.user?.fid,
+      isAdded: structuredContext.client?.added,
+      location: structuredContext.location,
+    });
+
+    return structuredContext;
   } catch (error: any) {
     console.warn('Failed to get Mini App context:', error);
     return null;

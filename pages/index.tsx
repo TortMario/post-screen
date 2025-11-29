@@ -24,16 +24,22 @@ export default function Home() {
 
   useEffect(() => {
     // Check if we're in a Mini App and get user profile on mount
+    // According to Base documentation, Mini Apps have access to rich social context
     (async () => {
       try {
         const inMiniApp = await isInMiniApp();
         if (inMiniApp) {
           console.log('✅ App is running as Mini App');
+          console.log('📱 Mini App provides social context: user identity, location, client status');
+          
           const userProfile = await getMiniAppUserProfile();
           if (userProfile) {
             console.log('✅ Got user profile from Mini App on mount:', userProfile);
+            console.log(`   FID: ${userProfile.fid}, Username: ${userProfile.username || 'N/A'}`);
             setUserProfile(userProfile);
           }
+        } else {
+          console.log('ℹ️ App is running in standalone mode (not as Mini App)');
         }
       } catch (err) {
         console.warn('Failed to check Mini App status on mount:', err);
