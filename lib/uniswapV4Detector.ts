@@ -217,8 +217,12 @@ async function tryGetPlatformReferrer(
     });
 
     return platformReferrer as Address;
-  } catch (error) {
+  } catch (error: any) {
     // Function doesn't exist or token is not a Zora coin
+    // Log error details for debugging (only first few to avoid spam)
+    if (error?.message && !error.message.includes('does not exist')) {
+      // Only log non-standard errors
+    }
     return '0x0000000000000000000000000000000000000000' as Address;
   }
 }
@@ -243,14 +247,13 @@ export async function isBaseAppTokenByReferrer(
     const isBaseApp = platformReferrer.toLowerCase() === BASE_PLATFORM_REFERRER.toLowerCase();
     
     if (isBaseApp) {
-      console.log(`    ✓ Token ${tokenAddress} is Base App token (platformReferrer: ${platformReferrer})`);
+      console.log(`    ✓ Token ${tokenAddress.slice(0, 10)}... is Base App token (platformReferrer: ${platformReferrer})`);
     } else if (platformReferrer !== '0x0000000000000000000000000000000000000000') {
       // Token has platformReferrer but it's not Base App (might be Zora direct)
-      console.log(`    ✗ Token ${tokenAddress} is Zora coin but NOT Base App (platformReferrer: ${platformReferrer}, expected: ${BASE_PLATFORM_REFERRER})`);
-    } else {
-      // Token doesn't have platformReferrer function (not a Zora coin)
-      console.log(`    ✗ Token ${tokenAddress} is not a Zora coin (no platformReferrer function)`);
+      // Only log first few for debugging
+      console.log(`    ✗ Token ${tokenAddress.slice(0, 10)}... is Zora coin but NOT Base App (platformReferrer: ${platformReferrer.slice(0, 10)}..., expected: ${BASE_PLATFORM_REFERRER.slice(0, 10)}...)`);
     }
+    // Don't log tokens without platformReferrer to reduce noise
     
     return isBaseApp;
   } catch (error) {

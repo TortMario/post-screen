@@ -635,19 +635,11 @@ export class AnalyticsService {
       console.log('This is the fastest method - directly checks platformReferrer() on each token');
       console.log('Base App tokens are Zora coins with platformReferrer() == BASE_PLATFORM_REFERRER');
       
-      // Limit tokens to check (prioritize tokens with higher balances)
-      // Sort by balance and check top tokens first to find BaseApp posts faster
-      const sortedTokens = [...tokens].sort((a, b) => {
-        const balanceA = parseFloat(a.balanceFormatted || '0');
-        const balanceB = parseFloat(b.balanceFormatted || '0');
-        return balanceB - balanceA; // Higher balance first
-      });
+      // Check ALL tokens - BaseApp posts might have low balances
+      // Don't limit - we need to check all tokens to find BaseApp posts
+      const tokensToCheck = tokens;
       
-      // Check top 50 tokens with highest balance (most likely to be BaseApp posts)
-      const MAX_TOKENS_TO_CHECK = 50;
-      const tokensToCheck = sortedTokens.slice(0, Math.min(MAX_TOKENS_TO_CHECK, sortedTokens.length));
-      
-      console.log(`Checking top ${tokensToCheck.length} tokens by balance (out of ${tokens.length} total)`);
+      console.log(`Checking all ${tokensToCheck.length} tokens via platformReferrer() (no limit)`);
       
       // Check tokens in batches (this is fast since we're just calling a view function)
       // Increased batch size and reduced delays for faster processing
@@ -682,10 +674,13 @@ export class AnalyticsService {
           
           if (isBaseApp) {
             baseAppAddresses.add(token.tokenAddress.toLowerCase());
-            // Only log successful matches to reduce noise
-            console.log(`    ✓ ${tokenName} is BaseApp token`);
+            console.log(`    ✓ ${tokenName} (${token.tokenAddress.slice(0, 10)}...) is BaseApp token`);
+          } else {
+            // Log first few failures for debugging
+            if (baseAppAddresses.size === 0 && i < 3) {
+              console.log(`    ✗ ${tokenName} (${token.tokenAddress.slice(0, 10)}...) is NOT BaseApp token`);
+            }
           }
-          // Don't log failures to speed up processing
           
           return { address: token.tokenAddress, isBaseApp };
         } catch (error: any) {
@@ -700,6 +695,17 @@ export class AnalyticsService {
     }
     
     console.log(`\n✓ Found ${baseAppAddresses.size} BaseApp tokens via platformReferrer() check`);
+    
+    if (baseAppAddresses.size === 0) {
+      console.warn('⚠️ No BaseApp tokens found via platformReferrer()');
+      console.warn('This could mean:');
+      console.warn('1. Tokens are not Zora coins (no platformReferrer() function)');
+      console.warn('2. Tokens are Zora coins but created directly (not via Base App)');
+      console.warn('3. Tokens are BaseApp but platformReferrer() check failed');
+      console.warn(`Checked ${tokensToCheck.length} tokens total`);
+    } else {
+      console.log('BaseApp token addresses found:', Array.from(baseAppAddresses).slice(0, 5).map(a => a.slice(0, 10) + '...'));
+    }
     
     return baseAppAddresses;
     } catch (error: any) {
@@ -725,15 +731,17 @@ export class AnalyticsService {
       console.log(`\n=== Fallback: Checking tokens via Uniswap V4 pools ===`);
       console.log('This method checks if tokens have pools with Base App platformReferrer');
       
-      // Check a sample of tokens with highest balance (most likely to be BaseApp posts)
+      // Check more tokens - BaseApp posts might have low balances
       const sortedTokens = [...tokens].sort((a, b) => {
         const balanceA = parseFloat(a.balanceFormatted || '0');
         const balanceB = parseFloat(b.balanceFormatted || '0');
         return balanceB - balanceA; // Higher balance first
       });
       
-      const SAMPLE_SIZE = Math.min(15, sortedTokens.length); // Check top 15 tokens by balance
+      const SAMPLE_SIZE = Math.min(30, sortedTokens.length); // Check top 30 tokens by balance
       const tokensToCheck = sortedTokens.slice(0, SAMPLE_SIZE);
+      
+      console.log(`Checking top ${tokensToCheck.length} tokens by balance for pool-based detection`);
       
       console.log(`Checking sample of ${tokensToCheck.length} tokens (to avoid timeout)...`);
       
