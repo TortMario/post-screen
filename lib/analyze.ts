@@ -630,20 +630,21 @@ export class AnalyticsService {
       return baseAppAddresses;
     }
 
-    console.log(`\n=== Alternative: Checking ${tokens.length} tokens via platformReferrer() ===`);
-    console.log('This is the fastest method - directly checks platformReferrer() on each token');
-    console.log('Base App tokens are Zora coins with platformReferrer() == BASE_PLATFORM_REFERRER');
-    
-    // Check ALL tokens - no limit
-    // Optimized for speed: larger batches, shorter delays, parallel processing
-    const tokensToCheck = tokens; // Check all tokens
-    
-    // Check tokens in batches (this is fast since we're just calling a view function)
-    // Increased batch size and reduced delays for faster processing
-    const BATCH_SIZE = 25; // Larger batches for faster processing
-    const totalBatches = Math.ceil(tokensToCheck.length / BATCH_SIZE);
-    
-    for (let i = 0; i < tokensToCheck.length; i += BATCH_SIZE) {
+    try {
+      console.log(`\n=== Alternative: Checking ${tokens.length} tokens via platformReferrer() ===`);
+      console.log('This is the fastest method - directly checks platformReferrer() on each token');
+      console.log('Base App tokens are Zora coins with platformReferrer() == BASE_PLATFORM_REFERRER');
+      
+      // Check ALL tokens - no limit
+      // Optimized for speed: larger batches, shorter delays, parallel processing
+      const tokensToCheck = tokens; // Check all tokens
+      
+      // Check tokens in batches (this is fast since we're just calling a view function)
+      // Increased batch size and reduced delays for faster processing
+      const BATCH_SIZE = 25; // Larger batches for faster processing
+      const totalBatches = Math.ceil(tokensToCheck.length / BATCH_SIZE);
+      
+      for (let i = 0; i < tokensToCheck.length; i += BATCH_SIZE) {
       const batch = tokensToCheck.slice(i, i + BATCH_SIZE);
       const batchNum = Math.floor(i / BATCH_SIZE) + 1;
       console.log(`  Checking batch ${batchNum}/${totalBatches} (${batch.length} tokens)...`);
@@ -695,6 +696,12 @@ export class AnalyticsService {
     console.log(`\n✓ Found ${baseAppAddresses.size} BaseApp tokens via platformReferrer() check`);
     
     return baseAppAddresses;
+    } catch (error: any) {
+      console.error('Error in detectBaseAppTokensByReferrer:', error);
+      console.error('Error stack:', error.stack);
+      // Return empty set on error - don't break the entire analysis
+      return new Set<string>();
+    }
   }
 
   /**
@@ -708,17 +715,18 @@ export class AnalyticsService {
       return baseAppAddresses;
     }
 
-    console.log(`\n=== Fallback: Checking tokens via Uniswap V4 pools ===`);
-    console.log('This method checks if tokens have pools with Base App platformReferrer');
-    
-    // Check a sample of tokens (checking all would be too slow)
-    const SAMPLE_SIZE = Math.min(20, tokens.length); // Check first 20 tokens
-    const tokensToCheck = tokens.slice(0, SAMPLE_SIZE);
-    
-    console.log(`Checking sample of ${tokensToCheck.length} tokens (to avoid timeout)...`);
-    
-    const BATCH_SIZE = 3; // Check 3 tokens at a time
-    for (let i = 0; i < tokensToCheck.length; i += BATCH_SIZE) {
+    try {
+      console.log(`\n=== Fallback: Checking tokens via Uniswap V4 pools ===`);
+      console.log('This method checks if tokens have pools with Base App platformReferrer');
+      
+      // Check a sample of tokens (checking all would be too slow)
+      const SAMPLE_SIZE = Math.min(20, tokens.length); // Check first 20 tokens
+      const tokensToCheck = tokens.slice(0, SAMPLE_SIZE);
+      
+      console.log(`Checking sample of ${tokensToCheck.length} tokens (to avoid timeout)...`);
+      
+      const BATCH_SIZE = 3; // Check 3 tokens at a time
+      for (let i = 0; i < tokensToCheck.length; i += BATCH_SIZE) {
       const batch = tokensToCheck.slice(i, i + BATCH_SIZE);
       console.log(`  Checking batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(tokensToCheck.length / BATCH_SIZE)}...`);
       
@@ -750,6 +758,12 @@ export class AnalyticsService {
     }
     
     return baseAppAddresses;
+    } catch (error: any) {
+      console.error('Error in detectBaseAppTokensByPool:', error);
+      console.error('Error stack:', error.stack);
+      // Return empty set on error - don't break the entire analysis
+      return new Set<string>();
+    }
   }
 
   private async findTokenTransactions(
