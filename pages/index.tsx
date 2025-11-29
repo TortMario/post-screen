@@ -76,6 +76,13 @@ export default function Home() {
 
       timeoutId = setTimeout(() => controller.abort(), 70000); // 70 seconds timeout
       
+      // Log API keys status (without exposing full keys)
+      const baseScanKey = process.env.NEXT_PUBLIC_BASESCAN_API_KEY || '';
+      const coinGeckoKey = process.env.NEXT_PUBLIC_COINGECKO_API_KEY || '';
+      console.log('🔑 API Keys Status:');
+      console.log('  BaseScan:', baseScanKey ? `Present (${baseScanKey.length} chars)` : 'Missing');
+      console.log('  CoinGecko:', coinGeckoKey ? `Present (${coinGeckoKey.length} chars)` : 'Missing');
+      
       const response = await fetch('/api/analyze', {
         method: 'POST',
         headers: {
@@ -83,8 +90,8 @@ export default function Home() {
         },
         body: JSON.stringify({
           address: walletAddress,
-          baseScanApiKey: process.env.NEXT_PUBLIC_BASESCAN_API_KEY || '',
-          coinGeckoApiKey: process.env.NEXT_PUBLIC_COINGECKO_API_KEY || '',
+          baseScanApiKey: baseScanKey,
+          coinGeckoApiKey: coinGeckoKey,
         }),
         signal: controller.signal,
       });
@@ -152,7 +159,8 @@ export default function Home() {
         console.error('Error details:', errorDetails);
         
         const errorMessage = errorDetails.reasons?.join('\n') || 'No tokens found in wallet';
-        setError(`No tokens found.\n\n${errorMessage}\n\nWallet: ${errorDetails.walletAddress}\nAPI Key: ${errorDetails.hasApiKey ? 'Present' : 'Missing'}`);
+        const walletShort = errorDetails.walletAddress ? `${errorDetails.walletAddress.slice(0, 6)}...${errorDetails.walletAddress.slice(-4)}` : 'Unknown';
+        setError(`No tokens found in wallet ${walletShort}\n\n${errorMessage}\n\nAPI Key: ${errorDetails.hasApiKey ? '✅ Present' : '❌ Missing'}\n\n💡 Tips:\n- Check if wallet has tokens on Base: https://basescan.org/address/${errorDetails.walletAddress}\n- Verify API key in .env.local file\n- Check server console for detailed logs`);
         setAnalysis(result);
         return;
       }
@@ -166,12 +174,8 @@ export default function Home() {
         console.error('4. BaseScan API may be experiencing issues');
         console.error('Check server logs for detailed API responses.');
         
-        setError(`No tokens found. Possible reasons:
-1. API rate limit (add NEXT_PUBLIC_BASESCAN_API_KEY to environment variables)
-2. Wallet has no tokens on Base network
-3. API key is invalid or missing
-4. BaseScan API may be experiencing issues
-5. Check server logs for detailed API responses`);
+        const walletShort = walletAddress ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}` : 'Unknown';
+        setError(`No tokens found in wallet ${walletShort}\n\nPossible reasons:\n1. API rate limit (check NEXT_PUBLIC_BASESCAN_API_KEY in .env.local)\n2. Wallet has no tokens on Base network\n3. API key is invalid or missing\n4. BaseScan API may be experiencing issues\n\n💡 Check wallet on BaseScan:\nhttps://basescan.org/address/${walletAddress}\n\nCheck server console for detailed API responses.`);
       } else {
         const tokensWithBalance = result.wallet.tokens.filter(t => parseFloat(t.balanceFormatted || '0') > 0);
         console.log(`✓ Found ${result.wallet.tokens.length} total tokens, ${tokensWithBalance.length} with balance > 0`);
