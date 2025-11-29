@@ -191,37 +191,45 @@ export class PostPriceService {
     // Try Uniswap pool first (most accurate - reads directly from blockchain)
     if (tokenAddress) {
       try {
+        console.log(`  Attempting to get Uniswap pool price for ${tokenAddress.slice(0, 10)}...`);
         const uniswapPrice = await getUniswapPriceFromPool(tokenAddress);
         if (uniswapPrice && uniswapPrice.priceInUSD > 0) {
-          console.log(`  Uniswap pool price for ${tokenAddress.slice(0, 10)}...: $${uniswapPrice.priceInUSD.toFixed(6)} USD`);
+          console.log(`  ✓ Uniswap pool price for ${tokenAddress.slice(0, 10)}...: $${uniswapPrice.priceInUSD.toFixed(6)} USD`);
           return {
             price: uniswapPrice.priceInUSD.toString(),
             source: 'onchain',
             timestamp: Date.now(),
             isUSD: true,
           };
+        } else {
+          console.warn(`  ✗ Uniswap pool price not available for ${tokenAddress.slice(0, 10)}...`);
         }
       } catch (error) {
-        console.warn(`  Uniswap pool price failed for ${tokenAddress}:`, error);
+        console.warn(`  ✗ Uniswap pool price failed for ${tokenAddress}:`, error);
       }
       
       // Try DexScreener as second option
       try {
+        console.log(`  Attempting to get DexScreener price for ${tokenAddress.slice(0, 10)}...`);
         const dexData = await getDexScreenerPrice(tokenAddress);
         if (dexData && dexData.priceUsd) {
           const priceValue = parseFloat(dexData.priceUsd);
           if (!isNaN(priceValue) && priceValue > 0 && isFinite(priceValue)) {
-            console.log(`  DexScreener price for ${tokenAddress.slice(0, 10)}...: $${dexData.priceUsd} USD`);
+            console.log(`  ✓ DexScreener price for ${tokenAddress.slice(0, 10)}...: $${dexData.priceUsd} USD`);
             return {
               price: dexData.priceUsd,
               source: 'dexscreener',
               timestamp: Date.now(),
               isUSD: true, // Price is in USD
             };
+          } else {
+            console.warn(`  ✗ DexScreener price invalid for ${tokenAddress.slice(0, 10)}...: ${dexData.priceUsd}`);
           }
+        } else {
+          console.warn(`  ✗ DexScreener price not available for ${tokenAddress.slice(0, 10)}...`);
         }
       } catch (error) {
-        console.warn(`  DexScreener API failed for ${tokenAddress}:`, error);
+        console.warn(`  ✗ DexScreener API failed for ${tokenAddress}:`, error);
       }
       
       // Try CoinGecko as third option

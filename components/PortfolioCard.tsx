@@ -3,9 +3,50 @@ import { PortfolioAnalytics } from '@/lib/calcPnL';
 
 interface PortfolioCardProps {
   portfolio: PortfolioAnalytics;
+  language?: 'ru' | 'en';
 }
 
-export default function PortfolioCard({ portfolio }: PortfolioCardProps) {
+const translations = {
+  ru: {
+    pnl: 'PnL',
+    totalProfitLoss: 'Общий профит/убыток',
+    totalInvested: 'Всего вложено',
+    currentValue: 'Текущая стоимость',
+    detailedStats: 'Детальная статистика',
+    myPosts: 'Мои посты (авторские токены)',
+    myPostsDesc: 'Получены бесплатно при создании поста',
+    purchasedPosts: 'Купленные посты',
+    purchasedPostsDesc: 'Посты других авторов, которые я купил',
+    count: 'Количество',
+    currentBalance: 'Текущий остаток',
+    sold: 'Продано',
+    profitFromSales: 'Профит от продаж',
+    invested: 'Вложено',
+    totalProfit: 'Общий профит',
+    totalLoss: 'Общий убыток',
+  },
+  en: {
+    pnl: 'PnL',
+    totalProfitLoss: 'Total Profit/Loss',
+    totalInvested: 'Total Invested',
+    currentValue: 'Current Value',
+    detailedStats: 'Detailed Statistics',
+    myPosts: 'My Posts (Author Tokens)',
+    myPostsDesc: 'Received free when creating a post',
+    purchasedPosts: 'Purchased Posts',
+    purchasedPostsDesc: 'Posts from other authors that I bought',
+    count: 'Count',
+    currentBalance: 'Current Balance',
+    sold: 'Sold',
+    profitFromSales: 'Profit from Sales',
+    invested: 'Invested',
+    totalProfit: 'Total Profit',
+    totalLoss: 'Total Loss',
+  },
+};
+
+export default function PortfolioCard({ portfolio, language = 'ru' }: PortfolioCardProps) {
+  const t = translations[language];
   const totalPnL = parseFloat(portfolio.totalPnL);
   const totalPnLPct = portfolio.totalPnLPct;
   const isPositive = totalPnL >= 0;
@@ -79,7 +120,7 @@ export default function PortfolioCard({ portfolio }: PortfolioCardProps) {
             <div className={`text-3xl font-bold bg-gradient-to-r ${textGradient} bg-clip-text text-transparent leading-tight`}>
               {totalPnLPct >= 0 ? '+' : ''}{totalPnLPct.toFixed(1)}%
             </div>
-            <div className="text-xs text-gray-400 mt-1 font-medium uppercase tracking-wider">PnL</div>
+            <div className="text-xs text-gray-400 mt-1 font-medium uppercase tracking-wider">{t.pnl}</div>
           </div>
         </div>
         
@@ -88,26 +129,108 @@ export default function PortfolioCard({ portfolio }: PortfolioCardProps) {
           <div className={`text-4xl font-bold bg-gradient-to-r ${textGradient} bg-clip-text text-transparent mb-2`}>
             {totalPnL >= 0 ? '+' : ''}${totalPnL.toFixed(2)}
           </div>
-          <div className="text-sm text-gray-400 font-medium uppercase tracking-wide">Total Profit/Loss</div>
+          <div className="text-sm text-gray-400 font-medium uppercase tracking-wide">{t.totalProfitLoss}</div>
         </div>
       </div>
 
       {/* Enhanced Stats Grid */}
       <div className="grid grid-cols-2 gap-4">
         <div className="bg-gradient-to-br from-blue-500/10 to-purple-500/10 rounded-2xl p-5 border border-blue-500/20 backdrop-blur-sm hover:border-blue-500/40 transition-all duration-200">
-          <div className="text-xs text-gray-400 mb-2 font-medium uppercase tracking-wide">Total Invested</div>
+          <div className="text-xs text-gray-400 mb-2 font-medium uppercase tracking-wide">{t.totalInvested}</div>
           <div className="text-xl font-bold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
             ${parseFloat(portfolio.totalInvested).toFixed(2)}
           </div>
         </div>
         
         <div className="bg-gradient-to-br from-purple-500/10 to-pink-500/10 rounded-2xl p-5 border border-purple-500/20 backdrop-blur-sm hover:border-purple-500/40 transition-all duration-200">
-          <div className="text-xs text-gray-400 mb-2 font-medium uppercase tracking-wide">Current Value</div>
+          <div className="text-xs text-gray-400 mb-2 font-medium uppercase tracking-wide">{t.currentValue}</div>
           <div className="text-xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
             ${parseFloat(portfolio.totalCurrentValue).toFixed(2)}
           </div>
         </div>
       </div>
+
+      {/* Сегментированная статистика */}
+      {portfolio.authorTokens && portfolio.purchasedTokens && (
+        <div className="mt-8 space-y-6">
+          <div className="text-lg font-bold text-white mb-4">{t.detailedStats}</div>
+          
+          {/* Авторские токены */}
+          <div className="bg-gradient-to-br from-green-500/10 to-emerald-500/10 rounded-2xl p-6 border border-green-500/20 backdrop-blur-sm">
+            <div className="flex items-center gap-2 mb-4">
+              <span className="text-2xl">✍️</span>
+              <div>
+                <div className="text-sm font-bold text-green-400">{t.myPosts}</div>
+                <div className="text-xs text-gray-400">{t.myPostsDesc}</div>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <div className="text-xs text-gray-400 mb-1">{t.count}</div>
+                <div className="text-lg font-bold text-green-400">{portfolio.authorTokens.count}</div>
+              </div>
+              <div>
+                <div className="text-xs text-gray-400 mb-1">{t.currentBalance}</div>
+                <div className="text-lg font-bold text-white">${parseFloat(portfolio.authorTokens.currentBalance).toFixed(2)}</div>
+              </div>
+              <div>
+                <div className="text-xs text-gray-400 mb-1">{t.sold}</div>
+                <div className="text-lg font-bold text-green-300">${parseFloat(portfolio.authorTokens.totalSold).toFixed(2)}</div>
+              </div>
+              <div>
+                <div className="text-xs text-gray-400 mb-1">{t.profitFromSales}</div>
+                <div className="text-lg font-bold bg-gradient-to-r from-green-400 to-emerald-400 bg-clip-text text-transparent">
+                  +${parseFloat(portfolio.authorTokens.profit).toFixed(2)}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Купленные токены */}
+          <div className="bg-gradient-to-br from-blue-500/10 to-cyan-500/10 rounded-2xl p-6 border border-blue-500/20 backdrop-blur-sm">
+            <div className="flex items-center gap-2 mb-4">
+              <span className="text-2xl">🛒</span>
+              <div>
+                <div className="text-sm font-bold text-blue-400">{t.purchasedPosts}</div>
+                <div className="text-xs text-gray-400">{t.purchasedPostsDesc}</div>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <div className="text-xs text-gray-400 mb-1">{t.count}</div>
+                <div className="text-lg font-bold text-blue-400">{portfolio.purchasedTokens.count}</div>
+              </div>
+              <div>
+                <div className="text-xs text-gray-400 mb-1">{t.invested}</div>
+                <div className="text-lg font-bold text-white">${parseFloat(portfolio.purchasedTokens.totalInvested).toFixed(2)}</div>
+              </div>
+              <div>
+                <div className="text-xs text-gray-400 mb-1">{t.currentBalance}</div>
+                <div className="text-lg font-bold text-white">${parseFloat(portfolio.purchasedTokens.currentBalance).toFixed(2)}</div>
+              </div>
+              <div>
+                <div className="text-xs text-gray-400 mb-1">{t.sold}</div>
+                <div className="text-lg font-bold text-blue-300">${parseFloat(portfolio.purchasedTokens.totalSold).toFixed(2)}</div>
+              </div>
+              {parseFloat(portfolio.purchasedTokens.profit) > 0 ? (
+                <div className="col-span-2">
+                  <div className="text-xs text-gray-400 mb-1">{t.totalProfit}</div>
+                  <div className="text-xl font-bold bg-gradient-to-r from-green-400 to-emerald-400 bg-clip-text text-transparent">
+                    +${parseFloat(portfolio.purchasedTokens.profit).toFixed(2)}
+                  </div>
+                </div>
+              ) : (
+                <div className="col-span-2">
+                  <div className="text-xs text-gray-400 mb-1">{t.totalLoss}</div>
+                  <div className="text-xl font-bold bg-gradient-to-r from-red-400 to-rose-400 bg-clip-text text-transparent">
+                    -${parseFloat(portfolio.purchasedTokens.loss).toFixed(2)}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

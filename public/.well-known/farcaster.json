@@ -11,17 +11,27 @@
     "version": "1",
     "name": "BasePost Portfolio",
     "homeUrl": "https://post-screen.vercel.app",
-    "iconUrl": "https://post-screen.vercel.app/icon-512.png",
-    "splashImageUrl": "https://post-screen.vercel.app/icon-512.png",
-    "splashBackgroundColor": "#667eea",
-    "subtitle": "Track your BaseApp posts",
-    "description": "Analyze your BaseApp post investments and track PnL. View portfolio analytics and performance metrics.",
+    "iconUrl": "https://post-screen.vercel.app/icon.png",
+    "splashImageUrl": "https://post-screen.vercel.app/splash.png",
+    "splashBackgroundColor": "#0d0f14",
+    "subtitle": "BaseApp portfolio tracker",
+    "description": "Analyze your BaseApp post investments and track PnL. View portfolio analytics and performance metrics for your BaseApp tokens.",
+    "screenshotUrls": [
+      "https://post-screen.vercel.app/1.png",
+      "https://post-screen.vercel.app/2.png"
+    ],
     "primaryCategory": "finance",
-    "tags": ["finance", "analytics", "portfolio"],
+    "tags": ["finance", "analytics", "portfolio", "baseapp", "crypto"],
+    "heroImageUrl": "https://post-screen.vercel.app/hero.png",
     "tagline": "Track your investments",
     "ogTitle": "BasePost Portfolio",
     "ogDescription": "Analyze your BaseApp post investments and track PnL",
-    "ogImageUrl": "https://post-screen.vercel.app/icon-512.png"
+    "ogImageUrl": "https://post-screen.vercel.app/hero.png",
+    "requiredChains": [
+      "eip155:8453"
+    ],
+    "webhookUrl": "https://post-screen.vercel.app/api/webhook",
+    "noindex": false
   }
 }
 

@@ -4,9 +4,11 @@ import UserProfile from '@/components/UserProfile';
 import PortfolioCard from '@/components/PortfolioCard';
 import PostList from '@/components/PostList';
 import PortfolioChart from '@/components/PortfolioChart';
+import LogsWindow from '@/components/LogsWindow';
 import { PortfolioAnalytics } from '@/lib/calcPnL';
 import { AnalysisResult } from '@/lib/analyze';
 import { getMiniAppUserProfile, isInMiniApp } from '@/lib/miniapp';
+import { LogEntry } from '@/lib/logger';
 
 export default function Home() {
   const [walletAddress, setWalletAddress] = useState<string>('');
@@ -21,6 +23,9 @@ export default function Home() {
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [cardImageUrl, setCardImageUrl] = useState<string | null>(null);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [showLogs, setShowLogs] = useState(false);
+  const [language, setLanguage] = useState<'ru' | 'en'>('ru');
 
   useEffect(() => {
     // Check if we're in a Mini App and get user profile on mount
@@ -75,6 +80,7 @@ export default function Home() {
     // Set a longer timeout for the fetch request (70 seconds to account for Vercel's 60s limit)
     const controller = new AbortController();
     let timeoutId: NodeJS.Timeout | null = null;
+    let logInterval: NodeJS.Timeout | null = null;
 
     try {
       setLoading(true);
@@ -82,12 +88,42 @@ export default function Home() {
 
       timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes timeout (for large wallets)
       
+      // Clear previous logs
+      setLogs([]);
+      // Не открываем окно автоматически
+      
       // Log API keys status (without exposing full keys)
       const baseScanKey = process.env.NEXT_PUBLIC_BASESCAN_API_KEY || '';
       const coinGeckoKey = process.env.NEXT_PUBLIC_COINGECKO_API_KEY || '';
       console.log('🔑 API Keys Status:');
       console.log('  BaseScan:', baseScanKey ? `Present (${baseScanKey.length} chars)` : 'Missing');
       console.log('  CoinGecko:', coinGeckoKey ? `Present (${coinGeckoKey.length} chars)` : 'Missing');
+      
+      // Add initial log
+      const initialLog: LogEntry = {
+        id: 'init',
+        timestamp: Date.now(),
+        level: 'info',
+        message: language === 'ru' ? '🚀 Начало анализа кошелька...' : '🚀 Starting wallet analysis...'
+      };
+      setLogs([initialLog]);
+      
+      // Simulate real-time log updates by adding logs progressively
+      logInterval = setInterval(() => {
+        setLogs(prev => {
+          // Add a placeholder log to show activity
+          const lastLog = prev[prev.length - 1];
+          if (lastLog && lastLog.id !== 'activity') {
+            return [...prev, {
+              id: 'activity',
+              timestamp: Date.now(),
+              level: 'info' as const,
+              message: language === 'ru' ? '⏳ Анализ в процессе...' : '⏳ Analysis in progress...'
+            }];
+          }
+          return prev;
+        });
+      }, 2000); // Update every 2 seconds
       
       const response = await fetch('/api/analyze', {
         method: 'POST',
@@ -158,6 +194,18 @@ export default function Home() {
       console.log('Posts analyzed:', result.portfolio.countOfPostTokens);
       console.log('Full result:', result);
       
+      // Clear interval
+      if (logInterval) {
+        clearInterval(logInterval);
+        logInterval = null;
+      }
+      
+      // Update logs if available
+      if (result.logs && result.logs.length > 0) {
+        setLogs(result.logs);
+        // Не открываем окно автоматически, только обновляем логи в ячейке загрузки
+      }
+      
       // Check if there's an error in the response
       if ((result as any).error === 'No tokens found' && (result as any).errorDetails) {
         const errorDetails = (result as any).errorDetails;
@@ -219,8 +267,14 @@ BaseApp posts are tokens created on Base App platform. Make sure you're analyzin
         }
       }
     } catch (err: any) {
+      // Clear interval on error
+      if (logInterval) {
+        clearInterval(logInterval);
+        logInterval = null;
+      }
       if (timeoutId) {
         clearTimeout(timeoutId);
+        timeoutId = null;
       }
       
       if (err.name === 'AbortError' || 
@@ -296,12 +350,24 @@ BaseApp posts are tokens created on Base App platform. Make sure you're analyzin
   return (
     <div className="min-h-screen bg-[#0d0f14] text-white">
       {/* Header with enhanced design */}
-      <header className="border-b border-white/10 bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-pink-500/10 backdrop-blur-md">
+      <header className="border-b border-white/10 bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-pink-500/10 backdrop-blur-md relative">
         <div className="container mx-auto px-4 py-8">
-          <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent mb-2">
-            BasePost's portfolio screen
-          </h1>
-          <p className="text-gray-300 text-lg">Portfolio Summary</p>
+          <div className="flex justify-between items-start">
+            <div>
+              <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent mb-2">
+                BasePost's portfolio screen
+              </h1>
+              <p className="text-gray-300 text-lg">Portfolio Summary</p>
+            </div>
+            {/* Language Toggle */}
+            <button
+              onClick={() => setLanguage(language === 'ru' ? 'en' : 'ru')}
+              className="flex items-center gap-2 bg-white/10 hover:bg-white/20 border border-white/20 text-white font-semibold py-2 px-4 rounded-xl transition-all duration-200 hover:scale-105"
+            >
+              <span>{language === 'ru' ? '🇷🇺' : '🇺🇸'}</span>
+              <span>{language.toUpperCase()}</span>
+            </button>
+          </div>
         </div>
       </header>
 
@@ -343,10 +409,44 @@ BaseApp posts are tokens created on Base App platform. Make sure you're analyzin
           </div>
         )}
 
-        {/* Loading State */}
+        {/* Loading State with Logs */}
         {loading && (
-          <div className="mb-6 bg-blue-500/20 border border-blue-500/50 rounded-2xl p-4 text-blue-200 text-center">
-            <p>Analyzing wallet... This may take a moment.</p>
+          <div className="mb-6 bg-gradient-to-br from-blue-500/10 via-purple-500/10 to-pink-500/10 backdrop-blur-md rounded-2xl p-6 border border-white/20 shadow-xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+              <h3 className="text-xl font-bold text-white">
+                {language === 'ru' ? 'Анализ кошелька...' : 'Analyzing wallet...'}
+              </h3>
+            </div>
+            {logs.length > 0 ? (
+              <div className="max-h-96 overflow-y-auto space-y-2 font-mono text-sm">
+                {logs.slice(-20).map((log) => (
+                  <div
+                    key={log.id}
+                    className={`flex items-start gap-3 py-2 px-3 rounded-lg ${
+                      log.level === 'success' ? 'text-green-400 bg-green-500/10' :
+                      log.level === 'warning' ? 'text-yellow-400 bg-yellow-500/10' :
+                      log.level === 'error' ? 'text-red-400 bg-red-500/10' :
+                      'text-blue-400 bg-blue-500/10'
+                    }`}
+                  >
+                    <span>
+                      {log.level === 'success' ? '✅' :
+                       log.level === 'warning' ? '⚠️' :
+                       log.level === 'error' ? '❌' : 'ℹ️'}
+                    </span>
+                    <span className="flex-1 break-words">{log.message}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <div className="animate-spin text-4xl mb-4">⏳</div>
+                <p className="text-gray-400">
+                  {language === 'ru' ? 'Ожидание начала анализа...' : 'Waiting for analysis to start...'}
+                </p>
+              </div>
+            )}
           </div>
         )}
 
@@ -360,7 +460,7 @@ BaseApp posts are tokens created on Base App platform. Make sure you're analyzin
                 <h2 className="text-2xl font-bold mb-6 bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
                   Portfolio Summary
                 </h2>
-                <PortfolioCard portfolio={analysis.portfolio} />
+                <PortfolioCard portfolio={analysis.portfolio} language={language} />
               </div>
 
               {/* Performance Stats */}
@@ -395,6 +495,24 @@ BaseApp posts are tokens created on Base App platform. Make sure you're analyzin
 
             {/* Right Column - Chart and Posts */}
             <div className="lg:col-span-2 space-y-6">
+              {/* Logs Button */}
+              {logs.length > 0 && (
+                <div className="flex justify-end">
+                  <button
+                    onClick={() => setShowLogs(!showLogs)}
+                    className="flex items-center gap-2 bg-gradient-to-r from-purple-500/20 to-pink-500/20 hover:from-purple-500/30 hover:to-pink-500/30 border border-purple-500/50 text-purple-300 font-semibold py-2 px-4 rounded-xl transition-all duration-200 hover:scale-105"
+                  >
+                    <span>📋</span>
+                    <span>{showLogs ? (language === 'ru' ? 'Скрыть логи' : 'Hide Logs') : (language === 'ru' ? 'Показать логи' : 'Show Logs')}</span>
+                    {logs.length > 0 && (
+                      <span className="bg-purple-500/50 text-white text-xs px-2 py-1 rounded-full">
+                        {logs.length}
+                      </span>
+                    )}
+                  </button>
+                </div>
+              )}
+
               {/* Portfolio Chart */}
               {analysis.portfolio.posts.length > 0 && (
                 <div className="bg-gradient-to-br from-indigo-500/10 via-purple-500/10 to-pink-500/10 backdrop-blur-md rounded-2xl p-6 border border-white/20 shadow-xl">
@@ -427,6 +545,14 @@ BaseApp posts are tokens created on Base App platform. Make sure you're analyzin
           </div>
         )}
       </div>
+
+      {/* Logs Window */}
+      <LogsWindow 
+        logs={logs} 
+        isVisible={showLogs} 
+        onClose={() => setShowLogs(false)}
+        language={language}
+      />
 
       {/* Footer with Support and Author Links */}
       <footer className="border-t border-white/10 bg-gradient-to-r from-blue-500/5 via-purple-500/5 to-pink-500/5 backdrop-blur-md mt-12">

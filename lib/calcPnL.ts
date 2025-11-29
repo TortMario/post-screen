@@ -1,6 +1,7 @@
 import { ethers } from 'ethers';
 import { BaseAppPostTransaction } from './detectBaseAppPost';
 import { PriceData } from './getPostPrice';
+import { WalletData, Transaction } from './wallet';
 
 export interface PostAnalytics {
   postTokenAddress: string;
@@ -20,6 +21,7 @@ export interface PostAnalytics {
   sellCount: number;
   firstBuyDate?: number;
   lastActivityDate?: number;
+  isAuthorToken?: boolean; // Токен от собственного поста
 }
 
 export interface PortfolioAnalytics {
@@ -31,6 +33,22 @@ export interface PortfolioAnalytics {
   countOfPostTokens: number;
   profitablePosts: number;
   losingPosts: number;
+  // Сегментированная статистика
+  authorTokens: {
+    count: number;
+    totalReceived: string; // Общая сумма полученных токенов (не затраты)
+    totalSold: string; // Общая сумма проданных токенов (профит)
+    currentBalance: string; // Текущий остаток
+    profit: string; // Профит от продаж (totalSold - 0, так как получены бесплатно)
+  };
+  purchasedTokens: {
+    count: number;
+    totalInvested: string; // Общая сумма вложений (покупки)
+    totalSold: string; // Общая сумма от продаж
+    currentBalance: string; // Текущий остаток
+    profit: string; // Профит/убыток (totalSold + currentValue - totalInvested)
+    loss: string; // Убыток (если profit < 0)
+  };
 }
 
 export class PnLCalculator {
@@ -61,16 +79,27 @@ export class PnLCalculator {
     posts: BaseAppPostTransaction[],
     balance: string,
     currentPrice: PriceData,
-    tokenDecimals: number = 18
+    tokenDecimals: number = 18,
+    isAuthorToken: boolean = false
   ): Promise<PostAnalytics> {
     const buys = posts.filter((p) => p.type === 'buy' || p.type === 'mint');
     const sells = posts.filter((p) => p.type === 'sell');
 
     // Calculate total bought (in ETH paid)
+    // Для авторских токенов: mint не считается затратой, только покупки других
     let totalCostETH = 0n;
     let totalTokensBought = 0n;
 
     for (const buy of buys) {
+      // Для авторских токенов: mint не считается затратой
+      if (isAuthorToken && buy.type === 'mint') {
+        // Токены от собственного поста получены бесплатно
+        if (buy.amount) {
+          totalTokensBought += BigInt(buy.amount);
+        }
+        continue;
+      }
+      
       // price is ETH paid (in wei)
       const ethPaid = BigInt(buy.price || '0');
       totalCostETH += ethPaid;
@@ -124,8 +153,9 @@ export class PnLCalculator {
     const balanceNum = parseFloat(balance);
     
     // initialValue = current balance * averageBuyPriceUSD (cost basis for remaining tokens)
+    // Для авторских токенов: initialValue = 0 (получены бесплатно)
     // This is the cost of the tokens that are still held
-    const initialValueNum = balanceNum * avgPriceUSD;
+    const initialValueNum = isAuthorToken ? 0 : balanceNum * avgPriceUSD;
     
     // currentValue = balance * currentPriceUSD (current market value)
     const currentValueNum = balanceNum * currentPriceUSD;
@@ -169,16 +199,71 @@ export class PnLCalculator {
       sellCount: sells.length,
       firstBuyDate,
       lastActivityDate,
+      isAuthorToken,
     };
   }
 
-  calculatePortfolioAnalytics(postsAnalytics: PostAnalytics[]): PortfolioAnalytics {
+  /**
+   * Определяет, является ли токен авторским (создан пользователем)
+   * Проверяет транзакции создания токена (mint) от адреса пользователя
+   */
+  private isAuthorToken(
+    tokenAddress: string,
+    userAddress: string,
+    transactions: Transaction[]
+  ): boolean {
+    const userAddressLower = userAddress.toLowerCase();
+    const tokenAddressLower = tokenAddress.toLowerCase();
+    
+    // Ищем транзакции создания токена (mint) от пользователя
+    // Обычно это транзакции, где from = userAddress и to = tokenAddress или контракт создания
+    for (const tx of transactions) {
+      const txFrom = tx.from?.toLowerCase();
+      const txTo = tx.to?.toLowerCase();
+      
+      // Проверяем, является ли пользователь создателем токена
+      // Это может быть транзакция создания поста в Base App
+      if (txFrom === userAddressLower) {
+        // Если есть транзакция mint или создания токена от пользователя
+        // и она связана с этим токеном
+        if (txTo === tokenAddressLower || 
+            tx.methodId === '0x40c10f19' || // safeMint
+            tx.methodId === '0x1249c58b') { // mint
+          return true;
+        }
+      }
+    }
+    
+    return false;
+  }
+
+  calculatePortfolioAnalytics(
+    postsAnalytics: PostAnalytics[],
+    userAddress?: string,
+    walletData?: WalletData
+  ): PortfolioAnalytics {
     let totalInvested = 0;
     let totalCurrentValue = 0;
     let profitablePosts = 0;
     let losingPosts = 0;
 
+    // Разделяем на авторские и купленные токены
+    const authorTokens: PostAnalytics[] = [];
+    const purchasedTokens: PostAnalytics[] = [];
+
     for (const post of postsAnalytics) {
+      // Определяем, является ли токен авторским
+      let isAuthor = post.isAuthorToken;
+      if (isAuthor === undefined && userAddress && walletData) {
+        isAuthor = this.isAuthorToken(post.postTokenAddress, userAddress, walletData.transactions);
+      }
+
+      if (isAuthor) {
+        authorTokens.push(post);
+      } else {
+        purchasedTokens.push(post);
+      }
+
       const invested = parseFloat(post.initialValue);
       const current = parseFloat(post.currentValue);
 
@@ -192,8 +277,59 @@ export class PnLCalculator {
       }
     }
 
+    // Расчет статистики для авторских токенов
+    let authorTotalReceived = 0; // Общая сумма полученных токенов (не затраты)
+    let authorTotalSold = 0; // Общая сумма проданных токенов (профит)
+    let authorCurrentBalance = 0; // Текущий остаток
+
+    for (const post of authorTokens) {
+      const balance = parseFloat(post.currentValue);
+      // totalSold уже в токенах, нужно умножить на текущую цену для получения USD
+      const soldTokens = parseFloat(post.totalSold);
+      const currentPrice = parseFloat(post.currentPrice);
+      const sold = soldTokens * currentPrice;
+      authorTotalReceived += balance + sold; // Все полученные токены
+      authorTotalSold += sold;
+      authorCurrentBalance += balance;
+      
+      console.log(`Author token ${post.postTokenAddress.slice(0, 10)}...: balance=$${balance.toFixed(2)}, sold=$${sold.toFixed(2)}, price=$${currentPrice.toFixed(6)}`);
+    }
+
+    const authorProfit = authorTotalSold; // Профит = все проданное (получено бесплатно)
+
+    // Расчет статистики для купленных токенов
+    let purchasedTotalInvested = 0; // Общая сумма вложений
+    let purchasedTotalSold = 0; // Общая сумма от продаж
+    let purchasedCurrentBalance = 0; // Текущий остаток
+
+    for (const post of purchasedTokens) {
+      const invested = parseFloat(post.initialValue);
+      const current = parseFloat(post.currentValue);
+      // totalSold уже в токенах, нужно умножить на текущую цену для получения USD
+      const soldTokens = parseFloat(post.totalSold);
+      const currentPrice = parseFloat(post.currentPrice);
+      const sold = soldTokens * currentPrice;
+      
+      purchasedTotalInvested += invested;
+      purchasedTotalSold += sold;
+      purchasedCurrentBalance += current;
+      
+      console.log(`Purchased token ${post.postTokenAddress.slice(0, 10)}...: invested=$${invested.toFixed(2)}, current=$${current.toFixed(2)}, sold=$${sold.toFixed(2)}, price=$${currentPrice.toFixed(6)}`);
+    }
+
+    const purchasedProfit = purchasedTotalSold + purchasedCurrentBalance - purchasedTotalInvested;
+    const purchasedLoss = purchasedProfit < 0 ? Math.abs(purchasedProfit) : 0;
+    const purchasedProfitFinal = purchasedProfit > 0 ? purchasedProfit : 0;
+
     const totalPnL = totalCurrentValue - totalInvested;
     const totalPnLPct = totalInvested > 0 ? (totalPnL / totalInvested) * 100 : 0;
+    
+    console.log(`\n=== Portfolio Summary ===`);
+    console.log(`Total invested: $${totalInvested.toFixed(2)}`);
+    console.log(`Total current value: $${totalCurrentValue.toFixed(2)}`);
+    console.log(`Total PnL: $${totalPnL.toFixed(2)} (${totalPnLPct.toFixed(2)}%)`);
+    console.log(`Author tokens: ${authorTokens.length}, Profit: $${authorProfit.toFixed(2)}`);
+    console.log(`Purchased tokens: ${purchasedTokens.length}, Profit: $${purchasedProfitFinal.toFixed(2)}, Loss: $${purchasedLoss.toFixed(2)}`);
 
     return {
       posts: postsAnalytics,
@@ -204,6 +340,21 @@ export class PnLCalculator {
       countOfPostTokens: postsAnalytics.length,
       profitablePosts,
       losingPosts,
+      authorTokens: {
+        count: authorTokens.length,
+        totalReceived: authorTotalReceived.toFixed(2),
+        totalSold: authorTotalSold.toFixed(2),
+        currentBalance: authorCurrentBalance.toFixed(2),
+        profit: authorProfit.toFixed(2),
+      },
+      purchasedTokens: {
+        count: purchasedTokens.length,
+        totalInvested: purchasedTotalInvested.toFixed(2),
+        totalSold: purchasedTotalSold.toFixed(2),
+        currentBalance: purchasedCurrentBalance.toFixed(2),
+        profit: purchasedProfitFinal.toFixed(2),
+        loss: purchasedLoss.toFixed(2),
+      },
     };
   }
 }

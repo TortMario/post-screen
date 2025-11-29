@@ -21,6 +21,8 @@ export default function WalletConnect({ onConnect }: WalletConnectProps) {
   const [error, setError] = useState<string | null>(null);
   const [sdkInitialized, setSdkInitialized] = useState(false);
   const [hasEthereum, setHasEthereum] = useState(false);
+  const [manualAddress, setManualAddress] = useState<string>('');
+  const [useManualAddress, setUseManualAddress] = useState(false);
 
   useEffect(() => {
     // Check for wallet availability
@@ -69,20 +71,13 @@ export default function WalletConnect({ onConnect }: WalletConnectProps) {
       })();
     }
 
-    // Check for saved address
-    const savedAddress = localStorage.getItem('walletAddress');
-    if (savedAddress) {
-      setAddress(savedAddress);
-      // Try to get user profile when loading saved address
-      (async () => {
-        try {
-          const userProfile = await getUserProfile();
-          onConnect(savedAddress, userProfile || undefined);
-        } catch {
-          onConnect(savedAddress);
-        }
-      })();
-    }
+    // Check for saved address - но не устанавливаем его автоматически
+    // Пользователь должен явно выбрать режим
+    // const savedAddress = localStorage.getItem('walletAddress');
+    // if (savedAddress) {
+    //   setAddress(savedAddress);
+    //   onConnect(savedAddress);
+    // }
   }, [onConnect, sdkInitialized]);
 
   const handleSignIn = async () => {
@@ -239,47 +234,195 @@ export default function WalletConnect({ onConnect }: WalletConnectProps) {
 
   const handleDisconnect = () => {
     setAddress(null);
+    setManualAddress('');
+    setUseManualAddress(false);
     localStorage.removeItem('walletAddress');
     localStorage.removeItem('walletSignature');
     onConnect('');
   };
 
-  if (address) {
+  const handleManualAddressSubmit = () => {
+    // Очищаем адрес от лишних символов и пробелов
+    let cleanedAddress = manualAddress.trim().replace(/\s+/g, '');
+    
+    // Если адрес содержит несколько адресов подряд (дублирование), берем первый
+    const addressMatch = cleanedAddress.match(/0x[a-fA-F0-9]{40}/);
+    if (addressMatch) {
+      cleanedAddress = addressMatch[0];
+    }
+    
+    // Validate address format
+    if (!cleanedAddress) {
+      setError('Please enter a wallet address');
+      return;
+    }
+    
+    // Проверяем формат адреса (должен быть 0x + 40 hex символов)
+    if (!/^0x[a-fA-F0-9]{40}$/i.test(cleanedAddress)) {
+      setError(`Invalid wallet address format. Please enter a valid Ethereum address (0x...). Got: ${cleanedAddress.slice(0, 20)}... (length: ${cleanedAddress.length})`);
+      return;
+    }
+    
+    setError(null);
+    setAddress(cleanedAddress.toLowerCase()); // Нормализуем к lowercase
+    localStorage.setItem('walletAddress', cleanedAddress.toLowerCase());
+    setManualAddress(''); // Очищаем поле ввода
+    onConnect(cleanedAddress.toLowerCase());
+  };
+
+  // Показываем подключенный адрес, но также даем возможность ввести новый
+  if (address && !useManualAddress) {
     return (
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-          <span className="font-mono text-sm bg-white/5 px-3 py-2 rounded-lg border border-white/10">
-            {address.slice(0, 6)}...{address.slice(-4)}
-          </span>
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+            <span className="font-mono text-sm bg-white/5 px-3 py-2 rounded-lg border border-white/10">
+              {address.slice(0, 6)}...{address.slice(-4)}
+            </span>
+          </div>
+          <button
+            onClick={handleDisconnect}
+            className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg border border-red-500/50 transition-all duration-200 text-sm font-medium"
+          >
+            Disconnect
+          </button>
         </div>
-        <button
-          onClick={handleDisconnect}
-          className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg border border-red-500/50 transition-all duration-200 text-sm font-medium"
-        >
-          Disconnect
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setUseManualAddress(true)}
+            className="flex-1 py-2 px-4 bg-white/5 hover:bg-white/10 text-gray-300 rounded-lg border border-white/10 transition-all duration-200 text-sm font-medium"
+          >
+            Enter Another Address
+          </button>
+        </div>
       </div>
     );
   }
 
   return (
-    <div>
-      <button
-        onClick={handleSignIn}
-        disabled={connecting || (!hasEthereum && !sdkInitialized)}
-        className="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        {connecting ? 'Connecting...' : 'Sign in with Base'}
-      </button>
-      {error && (
-        <div className="mt-3 bg-red-500/20 border border-red-500/50 rounded-lg p-3 text-red-200 text-sm">
-          {error}
-        </div>
-      )}
-      {!hasEthereum && !sdkInitialized && !error && (
-        <div className="mt-3 bg-yellow-500/20 border border-yellow-500/50 rounded-lg p-3 text-yellow-200 text-sm">
-          No wallet detected. Please install MetaMask, Coinbase Wallet, or Base extension.
+    <div className="space-y-4">
+      {/* Toggle between wallet connect and manual input */}
+      <div className="flex gap-2 mb-4">
+        <button
+          onClick={() => setUseManualAddress(false)}
+          className={`flex-1 py-2 px-4 rounded-lg transition-all duration-200 text-sm font-medium ${
+            !useManualAddress
+              ? 'bg-blue-500/30 text-blue-300 border border-blue-500/50'
+              : 'bg-white/5 text-gray-400 border border-white/10 hover:bg-white/10'
+          }`}
+        >
+          Connect Wallet
+        </button>
+        <button
+          onClick={() => setUseManualAddress(true)}
+          className={`flex-1 py-2 px-4 rounded-lg transition-all duration-200 text-sm font-medium ${
+            useManualAddress
+              ? 'bg-blue-500/30 text-blue-300 border border-blue-500/50'
+              : 'bg-white/5 text-gray-400 border border-white/10 hover:bg-white/10'
+          }`}
+        >
+          Enter Address
+        </button>
+      </div>
+
+      {!useManualAddress ? (
+        // Wallet Connect Mode
+        <>
+          <button
+            onClick={handleSignIn}
+            disabled={connecting || (!hasEthereum && !sdkInitialized)}
+            className="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {connecting ? 'Connecting...' : 'Sign in with Base'}
+          </button>
+          {error && (
+            <div className="mt-3 bg-red-500/20 border border-red-500/50 rounded-lg p-3 text-red-200 text-sm">
+              {error}
+            </div>
+          )}
+          {!hasEthereum && !sdkInitialized && !error && (
+            <div className="mt-3 bg-yellow-500/20 border border-yellow-500/50 rounded-lg p-3 text-yellow-200 text-sm">
+              No wallet detected. Please install MetaMask, Coinbase Wallet, or Base extension.
+            </div>
+          )}
+        </>
+      ) : (
+        // Manual Address Input Mode
+        <div className="space-y-3">
+          {address && (
+            <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3 text-blue-200 text-sm">
+              Current address: {address.slice(0, 6)}...{address.slice(-4)}
+            </div>
+          )}
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">
+              Wallet Address
+            </label>
+            <input
+              type="text"
+              value={manualAddress}
+              onChange={(e) => {
+                let value = e.target.value;
+                // Удаляем все пробелы и переносы строк
+                value = value.replace(/\s+/g, '').replace(/\n/g, '');
+                // Если найдено несколько адресов, берем первый
+                const addressMatch = value.match(/0x[a-fA-F0-9]{40}/i);
+                if (addressMatch) {
+                  value = addressMatch[0];
+                }
+                setManualAddress(value);
+                setError(null);
+              }}
+              onPaste={(e) => {
+                e.preventDefault();
+                // Получаем вставленный текст
+                const pastedText = e.clipboardData.getData('text');
+                // Очищаем от пробелов и переносов
+                let cleaned = pastedText.trim().replace(/\s+/g, '').replace(/\n/g, '');
+                // Ищем адрес в вставленном тексте
+                const addressMatch = cleaned.match(/0x[a-fA-F0-9]{40}/i);
+                if (addressMatch) {
+                  cleaned = addressMatch[0];
+                }
+                setManualAddress(cleaned);
+                setError(null);
+              }}
+              placeholder="0x..."
+              className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white font-mono text-sm focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 transition-all"
+              onKeyPress={(e) => {
+                if (e.key === 'Enter') {
+                  handleManualAddressSubmit();
+                }
+              }}
+              autoFocus={useManualAddress}
+            />
+          </div>
+          <button
+            onClick={handleManualAddressSubmit}
+            className="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-200"
+          >
+            Analyze Portfolio
+          </button>
+          {error && (
+            <div className="bg-red-500/20 border border-red-500/50 rounded-lg p-3 text-red-200 text-sm">
+              {error}
+            </div>
+          )}
+          <div className="text-xs text-gray-400 text-center">
+            Enter any Base network wallet address to analyze its portfolio
+          </div>
+          {address && (
+            <button
+              onClick={() => {
+                setUseManualAddress(false);
+                setManualAddress('');
+              }}
+              className="w-full py-2 px-4 bg-white/5 hover:bg-white/10 text-gray-300 rounded-lg border border-white/10 transition-all duration-200 text-sm font-medium"
+            >
+              Cancel
+            </button>
+          )}
         </div>
       )}
     </div>

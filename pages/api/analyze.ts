@@ -58,7 +58,14 @@ export default async function handler(
     }
 
     const analyticsService = new AnalyticsService(finalBaseScanKey, finalCoinGeckoKey);
+    
+    // Start analysis and periodically send logs
     const result = await analyticsService.analyzeWallet(address);
+    
+    // Ensure logs are included in result
+    if (!result.logs) {
+      result.logs = [];
+    }
 
     console.log('\n=== ANALYSIS COMPLETE ===');
     console.log('Total tokens found:', result.wallet.tokens.length);
