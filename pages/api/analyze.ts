@@ -23,21 +23,30 @@ export default async function handler(
     console.log('=== API Analyze Request ===');
     console.log('Address:', address);
     console.log('Has BaseScan API key (from body):', !!baseScanApiKey);
+    console.log('BaseScan API key from body (first 10 chars):', baseScanApiKey ? baseScanApiKey.slice(0, 10) + '...' : 'N/A');
     console.log('Has CoinGecko API key (from body):', !!coinGeckoApiKey);
     
-    // Also check env variables
+    // Also check env variables (on server, NEXT_PUBLIC_ vars are available)
     const envBaseScanKey = process.env.NEXT_PUBLIC_BASESCAN_API_KEY;
     const envCoinGeckoKey = process.env.NEXT_PUBLIC_COINGECKO_API_KEY;
     
     console.log('Has BaseScan API key (from env):', !!envBaseScanKey);
+    console.log('BaseScan API key from env (first 10 chars):', envBaseScanKey ? envBaseScanKey.slice(0, 10) + '...' : 'N/A');
     console.log('Has CoinGecko API key (from env):', !!envCoinGeckoKey);
     
-    // Use provided keys or env keys
+    // Use provided keys or env keys (prefer body, fallback to env)
     const finalBaseScanKey = baseScanApiKey || envBaseScanKey || '';
     const finalCoinGeckoKey = coinGeckoApiKey || envCoinGeckoKey || '';
     
+    console.log('=== Final API Keys ===');
     console.log('Using BaseScan API key:', !!finalBaseScanKey, '(length:', finalBaseScanKey.length, ')');
+    console.log('BaseScan API key source:', baseScanApiKey ? 'body' : (envBaseScanKey ? 'env' : 'none'));
     console.log('Using CoinGecko API key:', !!finalCoinGeckoKey);
+    
+    if (!finalBaseScanKey) {
+      console.error('⚠️ WARNING: No BaseScan API key available!');
+      console.error('This will cause rate limiting and may prevent token fetching.');
+    }
 
     if (!address) {
       return res.status(400).json({ error: 'Wallet address is required' });

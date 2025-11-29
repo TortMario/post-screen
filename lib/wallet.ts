@@ -105,13 +105,17 @@ export class WalletService {
     // Use tokentx endpoint (works with free API) to calculate balances from transactions
     try {
       if (!this.baseScanApiKey) {
-        console.warn('No API key provided. Please add NEXT_PUBLIC_BASESCAN_API_KEY to .env.local');
+        console.warn('⚠️ No API key provided. Please add NEXT_PUBLIC_BASESCAN_API_KEY to .env.local');
+        console.warn('⚠️ Without API key, you will hit rate limits quickly (5 calls/second)');
+      } else {
+        console.log('✓ API key provided (length:', this.baseScanApiKey.length, ', first 10 chars:', this.baseScanApiKey.slice(0, 10) + '...)');
       }
       
       // Use tokentx endpoint (works with free API plan)
       // Try to fetch as many transactions as possible (up to 10,000 per request)
       const url = `${ETHERSCAN_API_V2}?chainid=${BASE_CHAIN_ID}&module=account&action=tokentx&address=${address}&startblock=0&endblock=99999999&sort=desc&page=1&offset=10000${this.baseScanApiKey ? `&apikey=${this.baseScanApiKey}` : ''}`;
       console.log('Fetching token balances from Etherscan API V2 (tokentx):', url.replace(this.baseScanApiKey || '', '***'));
+      console.log('API key in URL:', this.baseScanApiKey ? 'Yes' : 'No');
       
       const response = await fetch(url);
       
@@ -223,13 +227,22 @@ export class WalletService {
         console.warn(`API endpoint: ${ETHERSCAN_API_V2}`);
         console.warn(`Chain ID: ${BASE_CHAIN_ID}`);
         console.warn(`API key present: ${!!this.baseScanApiKey}`);
+        console.warn(`API key length: ${this.baseScanApiKey?.length || 0}`);
+        console.warn(`API response status: ${data.status}`);
+        console.warn(`API response message: ${data.message}`);
         
         // Try alternative method as fallback
         console.warn('Trying alternative RPC method to verify...');
-        const rpcResult = await this.getTokenBalancesViaRPC(address).catch(() => []);
-        if (rpcResult.length > 0) {
-          console.log(`✓ RPC method found ${rpcResult.length} tokens - API may have issues`);
-          return rpcResult;
+        try {
+          const rpcResult = await this.getTokenBalancesViaRPC(address);
+          if (rpcResult.length > 0) {
+            console.log(`✓ RPC method found ${rpcResult.length} tokens - API may have issues`);
+            return rpcResult;
+          } else {
+            console.warn('⚠️ RPC method also returned 0 tokens - wallet may truly have no tokens');
+          }
+        } catch (rpcError) {
+          console.error('RPC fallback failed:', rpcError);
         }
         
         return [];
