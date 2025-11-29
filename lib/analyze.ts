@@ -104,31 +104,74 @@ export class AnalyticsService {
       console.warn('Trying fallback methods: platformReferrer() and pool-based detection...');
       console.warn('This is slower but more reliable - some tokens may not match bytecode fingerprint');
       
-      // FALLBACK 1: Try platformReferrer() check for all tokens
-      console.log('\n=== Fallback 1: Checking all tokens via platformReferrer() ===');
-      const referrerMatches = await this.detectBaseAppTokensByReferrer(tokensWithBalance);
-      
-      if (referrerMatches.size > 0) {
-        console.log(`✓ Found ${referrerMatches.size} BaseApp tokens via platformReferrer() check`);
-        baseAppTokenAddresses = referrerMatches;
-      } else {
-        console.warn('⚠️ No BaseApp tokens found via platformReferrer() check');
+      try {
+        // FALLBACK 1: Try platformReferrer() check for all tokens
+        console.log('\n=== Fallback 1: Checking all tokens via platformReferrer() ===');
+        const referrerMatches = await this.detectBaseAppTokensByReferrer(tokensWithBalance);
         
-        // FALLBACK 2: Try pool-based detection
-        console.log('\n=== Fallback 2: Checking tokens via Uniswap V4 pools ===');
-        const poolMatches = await this.detectBaseAppTokensByPool(tokensWithBalance);
-        
-        if (poolMatches.size > 0) {
-          console.log(`✓ Found ${poolMatches.size} BaseApp tokens via pool check`);
-          baseAppTokenAddresses = poolMatches;
+        if (referrerMatches.size > 0) {
+          console.log(`✓ Found ${referrerMatches.size} BaseApp tokens via platformReferrer() check`);
+          baseAppTokenAddresses = referrerMatches;
         } else {
-          console.warn('⚠️ No BaseApp tokens found via any method');
-          console.warn('Possible reasons:');
-          console.warn('1. Tokens are not Base App tokens (not created via Base App)');
-          console.warn('2. Tokens do not have platformReferrer() function (not Zora coins)');
-          console.warn('3. Network/RPC issues preventing checks');
-          console.warn('4. Tokens may be created via other platforms (Zora directly, not Base App)');
+          console.warn('⚠️ No BaseApp tokens found via platformReferrer() check');
           
+          try {
+            // FALLBACK 2: Try pool-based detection
+            console.log('\n=== Fallback 2: Checking tokens via Uniswap V4 pools ===');
+            const poolMatches = await this.detectBaseAppTokensByPool(tokensWithBalance);
+            
+            if (poolMatches.size > 0) {
+              console.log(`✓ Found ${poolMatches.size} BaseApp tokens via pool check`);
+              baseAppTokenAddresses = poolMatches;
+            } else {
+              console.warn('⚠️ No BaseApp tokens found via any method');
+              console.warn('Possible reasons:');
+              console.warn('1. Tokens are not Base App tokens (not created via Base App)');
+              console.warn('2. Tokens do not have platformReferrer() function (not Zora coins)');
+              console.warn('3. Network/RPC issues preventing checks');
+              console.warn('4. Tokens may be created via other platforms (Zora directly, not Base App)');
+              
+              return {
+                wallet: walletData,
+                portfolio: this.pnlCalculator.calculatePortfolioAnalytics([]),
+              };
+            }
+          } catch (poolError: any) {
+            console.error('Pool-based detection failed:', poolError);
+            console.warn('⚠️ No BaseApp tokens found via any method (pool check failed)');
+            console.warn('Possible reasons:');
+            console.warn('1. Tokens are not Base App tokens (not created via Base App)');
+            console.warn('2. Tokens do not have platformReferrer() function (not Zora coins)');
+            console.warn('3. Network/RPC issues preventing checks');
+            
+            return {
+              wallet: walletData,
+              portfolio: this.pnlCalculator.calculatePortfolioAnalytics([]),
+            };
+          }
+        }
+      } catch (referrerError: any) {
+        console.error('PlatformReferrer detection failed:', referrerError);
+        console.warn('⚠️ Fallback method failed, trying pool-based detection...');
+        
+        try {
+          // FALLBACK 2: Try pool-based detection
+          console.log('\n=== Fallback 2: Checking tokens via Uniswap V4 pools ===');
+          const poolMatches = await this.detectBaseAppTokensByPool(tokensWithBalance);
+          
+          if (poolMatches.size > 0) {
+            console.log(`✓ Found ${poolMatches.size} BaseApp tokens via pool check`);
+            baseAppTokenAddresses = poolMatches;
+          } else {
+            console.warn('⚠️ No BaseApp tokens found via any method');
+            return {
+              wallet: walletData,
+              portfolio: this.pnlCalculator.calculatePortfolioAnalytics([]),
+            };
+          }
+        } catch (poolError: any) {
+          console.error('Pool-based detection also failed:', poolError);
+          console.warn('⚠️ All detection methods failed');
           return {
             wallet: walletData,
             portfolio: this.pnlCalculator.calculatePortfolioAnalytics([]),
