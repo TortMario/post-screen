@@ -101,16 +101,40 @@ export class AnalyticsService {
       }
     } else {
       console.warn('\n⚠️ No BaseApp tokens found by bytecode check');
-      console.warn('Bytecode check is the fastest method - if no matches, tokens are likely not Base App tokens');
-      console.warn('Possible reasons:');
-      console.warn('1. Tokens are not Base App tokens (not created via Base App)');
-      console.warn('2. Token bytecode has changed (unlikely but possible)');
-      console.warn('3. Network/RPC issues preventing bytecode checks');
+      console.warn('Trying fallback methods: platformReferrer() and pool-based detection...');
+      console.warn('This is slower but more reliable - some tokens may not match bytecode fingerprint');
       
-      return {
-        wallet: walletData,
-        portfolio: this.pnlCalculator.calculatePortfolioAnalytics([]),
-      };
+      // FALLBACK 1: Try platformReferrer() check for all tokens
+      console.log('\n=== Fallback 1: Checking all tokens via platformReferrer() ===');
+      const referrerMatches = await this.detectBaseAppTokensByReferrer(tokensWithBalance);
+      
+      if (referrerMatches.size > 0) {
+        console.log(`✓ Found ${referrerMatches.size} BaseApp tokens via platformReferrer() check`);
+        baseAppTokenAddresses = referrerMatches;
+      } else {
+        console.warn('⚠️ No BaseApp tokens found via platformReferrer() check');
+        
+        // FALLBACK 2: Try pool-based detection
+        console.log('\n=== Fallback 2: Checking tokens via Uniswap V4 pools ===');
+        const poolMatches = await this.detectBaseAppTokensByPool(tokensWithBalance);
+        
+        if (poolMatches.size > 0) {
+          console.log(`✓ Found ${poolMatches.size} BaseApp tokens via pool check`);
+          baseAppTokenAddresses = poolMatches;
+        } else {
+          console.warn('⚠️ No BaseApp tokens found via any method');
+          console.warn('Possible reasons:');
+          console.warn('1. Tokens are not Base App tokens (not created via Base App)');
+          console.warn('2. Tokens do not have platformReferrer() function (not Zora coins)');
+          console.warn('3. Network/RPC issues preventing checks');
+          console.warn('4. Tokens may be created via other platforms (Zora directly, not Base App)');
+          
+          return {
+            wallet: walletData,
+            portfolio: this.pnlCalculator.calculatePortfolioAnalytics([]),
+          };
+        }
+      }
     }
 
     // STEP 2: Filter to only BaseApp tokens
