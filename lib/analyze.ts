@@ -240,19 +240,37 @@ export class AnalyticsService {
       })
     );
 
-    // STEP 4: Filter out tokens with zero price and sort by price (highest first)
+    // STEP 4: Include all BaseApp tokens (even without prices) - prices are optional
+    // Sort by price (tokens with prices first), but don't filter out tokens without prices
     const validTokens = tokensWithPrices
-      .filter(t => t.priceValue > 0)
-      .sort((a, b) => b.priceValue - a.priceValue); // Sort by price descending
+      .sort((a, b) => {
+        // Tokens with prices first, then by price value
+        if (a.priceValue > 0 && b.priceValue > 0) {
+          return b.priceValue - a.priceValue;
+        }
+        if (a.priceValue > 0) return -1;
+        if (b.priceValue > 0) return 1;
+        return 0; // Both have no price, keep original order
+      });
 
-    console.log(`Step 4: Found ${validTokens.length} BaseApp tokens with valid prices (sorted by price)`);
+    console.log(`Step 4: Found ${validTokens.length} BaseApp tokens (${validTokens.filter(t => t.priceValue > 0).length} with prices)`);
     
     if (validTokens.length === 0) {
-      console.warn('No BaseApp tokens with valid prices found');
+      console.warn('No BaseApp tokens found');
+      console.warn('This means tokens did not pass BaseApp detection (bytecode/platformReferrer/pool checks)');
       return {
         wallet: walletData,
         portfolio: this.pnlCalculator.calculatePortfolioAnalytics([]),
       };
+    }
+    
+    // Log tokens without prices for debugging
+    const tokensWithoutPrice = validTokens.filter(t => t.priceValue === 0);
+    if (tokensWithoutPrice.length > 0) {
+      console.warn(`⚠️ ${tokensWithoutPrice.length} BaseApp tokens have no price - will analyze anyway`);
+      tokensWithoutPrice.slice(0, 5).forEach(t => {
+        console.warn(`  No price found for ${t.token.tokenAddress.slice(0, 10)}... (${t.token.symbol || 'Unknown'})`);
+      });
     }
 
     // STEP 5: Analyze only BaseApp tokens (already sorted by price)
@@ -533,13 +551,16 @@ export class AnalyticsService {
           const priceValue = parseFloat(currentPrice.price || '0');
           console.log(`  Price for ${token.symbol}: ${currentPrice.price} (source: ${currentPrice.source}, value: ${priceValue})`);
 
-          // Skip tokens with zero or invalid price
-          if (!currentPrice.price || 
-              isNaN(priceValue) || 
-              priceValue <= 0 || 
-              !isFinite(priceValue)) {
-            console.log(`  Skipping ${token.symbol} - invalid or zero price: ${currentPrice.price}`);
-            return null;
+          // Don't skip tokens with zero price - analyze them anyway (price is optional)
+          // Only skip if price is explicitly invalid (NaN or Infinity)
+          if (isNaN(priceValue) || !isFinite(priceValue)) {
+            console.warn(`  ⚠️ Invalid price for ${token.symbol}: ${currentPrice.price} - using 0 as fallback`);
+            currentPrice.price = '0';
+          }
+          
+          // If price is 0, we'll still analyze but PnL calculations will be limited
+          if (priceValue <= 0) {
+            console.warn(`  ⚠️ Zero price for ${token.symbol} - will analyze with price = 0`);
           }
 
           // Calculate PnL
@@ -732,8 +753,16 @@ export class AnalyticsService {
       console.warn('2. Tokens are Zora coins but created directly (not via Base App)');
       console.warn('3. Tokens are BaseApp but platformReferrer() check failed');
       console.warn(`Checked ${tokensToCheck.length} tokens total`);
+      console.warn('Sample tokens checked:', tokensToCheck.slice(0, 5).map(t => ({
+        symbol: t.symbol || 'Unknown',
+        address: t.tokenAddress.slice(0, 10) + '...',
+        balance: t.balanceFormatted
+      })));
     } else {
-      console.log('BaseApp token addresses found:', Array.from(baseAppAddresses).slice(0, 5).map(a => a.slice(0, 10) + '...'));
+      console.log('✓ BaseApp token addresses found:', Array.from(baseAppAddresses).slice(0, 10).map(a => {
+        const token = tokensToCheck.find(t => t.tokenAddress.toLowerCase() === a);
+        return `${a.slice(0, 10)}... (${token?.symbol || 'Unknown'})`;
+      }));
     }
     
     return baseAppAddresses;

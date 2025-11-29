@@ -2,7 +2,14 @@ import { ethers } from 'ethers';
 import { createPublicClient, http, Address } from 'viem';
 import { base } from 'viem/chains';
 
-const BASE_RPC_URL = 'https://mainnet.base.org';
+// Base RPC endpoints (fallback chain for rate limits)
+const BASE_RPC_URLS = [
+  'https://mainnet.base.org',
+  'https://base-mainnet.g.alchemy.com/v2/demo', // Alchemy public endpoint
+  'https://base.publicnode.com', // Public node
+];
+
+const BASE_RPC_URL = BASE_RPC_URLS[0]; // Primary endpoint
 
 // Uniswap V4 addresses on Base Mainnet
 export const UNISWAP_V4_POOL_MANAGER = '0xA5B4F34780D948b571E676C34aB709D3AcA0498D' as Address;

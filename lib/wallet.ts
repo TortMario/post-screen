@@ -1,8 +1,23 @@
 import { ethers } from 'ethers';
 
-const BASE_RPC_URL = 'https://mainnet.base.org';
+// Base RPC endpoints (fallback chain for rate limits)
+const BASE_RPC_URLS = [
+  'https://mainnet.base.org',
+  'https://base-mainnet.g.alchemy.com/v2/demo', // Alchemy public endpoint
+  'https://base.publicnode.com', // Public node
+];
+
+const BASE_RPC_URL = BASE_RPC_URLS[0]; // Primary endpoint
 const ETHERSCAN_API_V2 = 'https://api.etherscan.io/v2/api';
 const BASE_CHAIN_ID = '8453'; // Base chain ID for Etherscan API V2
+
+// Helper to get RPC with retry
+function getRpcProvider(): ethers.JsonRpcProvider {
+  return new ethers.JsonRpcProvider(BASE_RPC_URL, {
+    name: 'base',
+    chainId: 8453,
+  });
+}
 
 export interface WalletData {
   address: string;
@@ -43,7 +58,7 @@ export class WalletService {
   public baseScanApiKey: string;
 
   constructor(baseScanApiKey?: string) {
-    this.provider = new ethers.JsonRpcProvider(BASE_RPC_URL);
+    this.provider = getRpcProvider();
     this.baseScanApiKey = baseScanApiKey || '';
   }
 

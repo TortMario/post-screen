@@ -19,7 +19,16 @@ export class BaseAppDetector {
   private codeCache: Map<string, boolean> = new Map();
 
   constructor(provider?: ethers.JsonRpcProvider) {
-    this.provider = provider || new ethers.JsonRpcProvider('https://mainnet.base.org');
+    // Use provided provider or create new one with retry logic
+    if (provider) {
+      this.provider = provider;
+    } else {
+      // Create provider with retry configuration
+      this.provider = new ethers.JsonRpcProvider('https://mainnet.base.org', {
+        name: 'base',
+        chainId: 8453,
+      });
+    }
   }
 
   /**
