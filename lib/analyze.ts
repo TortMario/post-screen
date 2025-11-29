@@ -5,6 +5,7 @@ import { PnLCalculator, PostAnalytics, PortfolioAnalytics } from './calcPnL';
 import { BaseAppDetector } from './baseAppDetector';
 import { enrichTokensWithDexScreener } from './findTokensViaDexScreener';
 import { isBaseAppTokenByPool, isBaseAppTokenByReferrer, isBaseAppTokenByPoolCheck } from './uniswapV4Detector';
+import { BASE_PLATFORM_REFERRER } from './uniswapV4Detector';
 import type { Address } from 'viem';
 
 export interface AnalysisResult {
@@ -809,7 +810,8 @@ export class AnalyticsService {
 
   /**
    * Alternative method: Detect BaseApp tokens by checking Uniswap V4 pools
-   * This is slower but can be used as a fallback
+   * According to Base documentation, we should check platformReferrer() on tokens in pools
+   * This method first tries direct platformReferrer() check (fast), then pool-based if needed
    */
   private async detectBaseAppTokensByPool(tokens: TokenBalance[]): Promise<Set<string>> {
     const baseAppAddresses = new Set<string>();
@@ -820,7 +822,8 @@ export class AnalyticsService {
 
     try {
       console.log(`\n=== Fallback: Checking tokens via Uniswap V4 pools ===`);
-      console.log('This method checks if tokens have pools with Base App platformReferrer');
+      console.log('According to Base docs: check platformReferrer() on tokens in pools');
+      console.log('First trying direct platformReferrer() check (faster), then pool-based if needed');
       
       // Check more tokens - BaseApp posts might have low balances
       const sortedTokens = [...tokens].sort((a, b) => {
@@ -829,48 +832,69 @@ export class AnalyticsService {
         return balanceB - balanceA; // Higher balance first
       });
       
-      const SAMPLE_SIZE = Math.min(30, sortedTokens.length); // Check top 30 tokens by balance
+      const SAMPLE_SIZE = Math.min(50, sortedTokens.length); // Check top 50 tokens by balance
       const tokensToCheck = sortedTokens.slice(0, SAMPLE_SIZE);
       
-      console.log(`Checking top ${tokensToCheck.length} tokens by balance for pool-based detection`);
+      console.log(`Checking top ${tokensToCheck.length} tokens by balance`);
       
-      console.log(`Checking sample of ${tokensToCheck.length} tokens (to avoid timeout)...`);
-      
-      const BATCH_SIZE = 3; // Check 3 tokens at a time
+      // First, try direct platformReferrer() check (much faster than pool search)
+      // This is the recommended method from Base documentation
+      const BATCH_SIZE = 20; // Larger batches for direct checks
       for (let i = 0; i < tokensToCheck.length; i += BATCH_SIZE) {
-      const batch = tokensToCheck.slice(i, i + BATCH_SIZE);
-      console.log(`  Checking batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(tokensToCheck.length / BATCH_SIZE)}...`);
-      
-      const checkPromises = batch.map(async (token) => {
-        try {
-          const isBaseApp = await Promise.race([
-            isBaseAppTokenByPool(token.tokenAddress as Address),
-            new Promise<boolean>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 10000)) // Reduced timeout
-          ]);
-          
-          if (isBaseApp) {
-            baseAppAddresses.add(token.tokenAddress.toLowerCase());
-            console.log(`    ✓ ${token.symbol || 'Unknown'} (${token.tokenAddress.slice(0, 10)}...) is BaseApp token (via pool)`);
+        const batch = tokensToCheck.slice(i, i + BATCH_SIZE);
+        console.log(`  Checking batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(tokensToCheck.length / BATCH_SIZE)} (direct platformReferrer)...`);
+        
+        const checkPromises = batch.map(async (token) => {
+          try {
+            // First try direct platformReferrer() check (fastest method from docs)
+            const isBaseApp = await Promise.race([
+              isBaseAppTokenByReferrer(token.tokenAddress as Address),
+              new Promise<boolean>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000))
+            ]);
+            
+            if (isBaseApp) {
+              baseAppAddresses.add(token.tokenAddress.toLowerCase());
+              console.log(`    ✓ ${token.symbol || 'Unknown'} (${token.tokenAddress.slice(0, 10)}...) is BaseApp token (via platformReferrer)`);
+              return { address: token.tokenAddress, isBaseApp: true };
+            }
+            
+            // If direct check fails, try pool-based (slower but more thorough)
+            // Only for tokens that didn't pass direct check
+            try {
+              const isBaseAppByPool = await Promise.race([
+                isBaseAppTokenByPool(token.tokenAddress as Address),
+                new Promise<boolean>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 8000))
+              ]);
+              
+              if (isBaseAppByPool) {
+                baseAppAddresses.add(token.tokenAddress.toLowerCase());
+                console.log(`    ✓ ${token.symbol || 'Unknown'} (${token.tokenAddress.slice(0, 10)}...) is BaseApp token (via pool)`);
+                return { address: token.tokenAddress, isBaseApp: true };
+              }
+            } catch (poolError) {
+              // Pool check failed, continue
+            }
+            
+            return { address: token.tokenAddress, isBaseApp: false };
+          } catch (error: any) {
+            // Both checks failed
+            return { address: token.tokenAddress, isBaseApp: false };
           }
-          
-          return { address: token.tokenAddress, isBaseApp };
-        } catch (error: any) {
-          console.log(`    ✗ ${token.symbol || 'Unknown'} (${token.tokenAddress.slice(0, 10)}...) pool check failed: ${error.message}`);
-          return { address: token.tokenAddress, isBaseApp: false };
+        });
+        
+        await Promise.allSettled(checkPromises);
+        
+        // Small delay between batches to avoid rate limits
+        if (i + BATCH_SIZE < tokensToCheck.length) {
+          await new Promise(resolve => setTimeout(resolve, 100));
         }
-      });
-      
-      await Promise.allSettled(checkPromises);
-      
-      // Minimal delay between batches
-      if (i + BATCH_SIZE < tokensToCheck.length) {
-        await new Promise(resolve => setTimeout(resolve, 200)); // Reduced delay
       }
-    }
-    
-    return baseAppAddresses;
+      
+      console.log(`Found ${baseAppAddresses.size} BaseApp tokens via pool-based detection`);
+      return baseAppAddresses;
     } catch (error: any) {
       console.error('Error in detectBaseAppTokensByPool:', error);
+      console.error('Error message:', error.message);
       console.error('Error stack:', error.stack);
       // Return empty set on error - don't break the entire analysis
       return new Set<string>();
@@ -1000,7 +1024,7 @@ export class AnalyticsService {
       // Return empty set on error - don't break the entire analysis
       return new Set<string>();
     }
-  }
+    }
 
   private async findTokenTransactions(
     walletAddress: string,
