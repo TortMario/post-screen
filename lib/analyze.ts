@@ -635,13 +635,23 @@ export class AnalyticsService {
       console.log('This is the fastest method - directly checks platformReferrer() on each token');
       console.log('Base App tokens are Zora coins with platformReferrer() == BASE_PLATFORM_REFERRER');
       
-      // Check ALL tokens - no limit
-      // Optimized for speed: larger batches, shorter delays, parallel processing
-      const tokensToCheck = tokens; // Check all tokens
+      // Limit tokens to check (prioritize tokens with higher balances)
+      // Sort by balance and check top tokens first to find BaseApp posts faster
+      const sortedTokens = [...tokens].sort((a, b) => {
+        const balanceA = parseFloat(a.balanceFormatted || '0');
+        const balanceB = parseFloat(b.balanceFormatted || '0');
+        return balanceB - balanceA; // Higher balance first
+      });
+      
+      // Check top 50 tokens with highest balance (most likely to be BaseApp posts)
+      const MAX_TOKENS_TO_CHECK = 50;
+      const tokensToCheck = sortedTokens.slice(0, Math.min(MAX_TOKENS_TO_CHECK, sortedTokens.length));
+      
+      console.log(`Checking top ${tokensToCheck.length} tokens by balance (out of ${tokens.length} total)`);
       
       // Check tokens in batches (this is fast since we're just calling a view function)
       // Increased batch size and reduced delays for faster processing
-      const BATCH_SIZE = 25; // Larger batches for faster processing
+      const BATCH_SIZE = 30; // Larger batches for faster processing
       const totalBatches = Math.ceil(tokensToCheck.length / BATCH_SIZE);
       
       for (let i = 0; i < tokensToCheck.length; i += BATCH_SIZE) {
@@ -655,7 +665,6 @@ export class AnalyticsService {
         
         try {
           // First try direct platformReferrer() check (fastest)
-          console.log(`    Checking ${tokenName} (${tokenAddress})...`);
           let isBaseApp = false;
           
           try {
@@ -663,7 +672,7 @@ export class AnalyticsService {
             // Skip pool-based check to maximize speed - if platformReferrer() doesn't exist, token is not a Zora coin
             isBaseApp = await Promise.race([
               isBaseAppTokenByReferrer(tokenAddress),
-              new Promise<boolean>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000)) // Shorter timeout for speed
+              new Promise<boolean>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000)) // Shorter timeout for speed
             ]);
           } catch (error: any) {
             // If check fails or times out, token is not a Base App token
@@ -673,10 +682,10 @@ export class AnalyticsService {
           
           if (isBaseApp) {
             baseAppAddresses.add(token.tokenAddress.toLowerCase());
-            console.log(`    ✓ ${tokenName} (${token.tokenAddress.slice(0, 10)}...) is BaseApp token`);
-          } else {
-            console.log(`    ✗ ${tokenName} (${token.tokenAddress.slice(0, 10)}...) is NOT BaseApp token`);
+            // Only log successful matches to reduce noise
+            console.log(`    ✓ ${tokenName} is BaseApp token`);
           }
+          // Don't log failures to speed up processing
           
           return { address: token.tokenAddress, isBaseApp };
         } catch (error: any) {
@@ -687,10 +696,7 @@ export class AnalyticsService {
       
       await Promise.allSettled(checkPromises);
       
-      // Minimal delay between batches to avoid rate limits but maximize speed
-      if (i + BATCH_SIZE < tokensToCheck.length) {
-        await new Promise(resolve => setTimeout(resolve, 50)); // Minimal delay for maximum speed
-      }
+      // No delay between batches - maximize speed (RPC can handle parallel requests)
     }
     
     console.log(`\n✓ Found ${baseAppAddresses.size} BaseApp tokens via platformReferrer() check`);
@@ -719,9 +725,15 @@ export class AnalyticsService {
       console.log(`\n=== Fallback: Checking tokens via Uniswap V4 pools ===`);
       console.log('This method checks if tokens have pools with Base App platformReferrer');
       
-      // Check a sample of tokens (checking all would be too slow)
-      const SAMPLE_SIZE = Math.min(20, tokens.length); // Check first 20 tokens
-      const tokensToCheck = tokens.slice(0, SAMPLE_SIZE);
+      // Check a sample of tokens with highest balance (most likely to be BaseApp posts)
+      const sortedTokens = [...tokens].sort((a, b) => {
+        const balanceA = parseFloat(a.balanceFormatted || '0');
+        const balanceB = parseFloat(b.balanceFormatted || '0');
+        return balanceB - balanceA; // Higher balance first
+      });
+      
+      const SAMPLE_SIZE = Math.min(15, sortedTokens.length); // Check top 15 tokens by balance
+      const tokensToCheck = sortedTokens.slice(0, SAMPLE_SIZE);
       
       console.log(`Checking sample of ${tokensToCheck.length} tokens (to avoid timeout)...`);
       
@@ -734,7 +746,7 @@ export class AnalyticsService {
         try {
           const isBaseApp = await Promise.race([
             isBaseAppTokenByPool(token.tokenAddress as Address),
-            new Promise<boolean>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 15000))
+            new Promise<boolean>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 10000)) // Reduced timeout
           ]);
           
           if (isBaseApp) {
@@ -751,9 +763,9 @@ export class AnalyticsService {
       
       await Promise.allSettled(checkPromises);
       
-      // Delay between batches
+      // Minimal delay between batches
       if (i + BATCH_SIZE < tokensToCheck.length) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 200)); // Reduced delay
       }
     }
     

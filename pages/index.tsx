@@ -74,7 +74,7 @@ export default function Home() {
       setLoading(true);
       setError(null);
 
-      timeoutId = setTimeout(() => controller.abort(), 70000); // 70 seconds timeout
+      timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes timeout (for large wallets)
       
       // Log API keys status (without exposing full keys)
       const baseScanKey = process.env.NEXT_PUBLIC_BASESCAN_API_KEY || '';
