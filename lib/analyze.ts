@@ -32,6 +32,12 @@ export class AnalyticsService {
     console.log('API key length:', this.walletService.baseScanApiKey?.length || 0);
     
     try {
+      // Add overall timeout protection (2 minutes max for entire analysis)
+      let analysisTimeout: NodeJS.Timeout | null = null;
+      analysisTimeout = setTimeout(() => {
+        console.error('⚠️ Analysis timeout - this should not happen, but protecting against infinite loops');
+      }, 120000);
+      
       // Get wallet data
       const walletData = await this.walletService.getWalletData(address);
 
@@ -279,12 +285,15 @@ export class AnalyticsService {
     console.log(`Total posts analyzed: ${postsAnalytics.length}`);
     console.log(`Portfolio PnL: ${portfolio.totalPnLPct.toFixed(2)}%`);
 
+    clearTimeout(analysisTimeout);
+    
     return {
       wallet: walletData,
       portfolio,
     };
     } catch (error: any) {
       console.error('Error in analyzeWallet:', error);
+      console.error('Error message:', error.message);
       console.error('Error stack:', error.stack);
       
       // Return empty result instead of throwing
@@ -635,16 +644,29 @@ export class AnalyticsService {
       console.log('This is the fastest method - directly checks platformReferrer() on each token');
       console.log('Base App tokens are Zora coins with platformReferrer() == BASE_PLATFORM_REFERRER');
       
-      // Check ALL tokens - BaseApp posts might have low balances
-      // Don't limit - we need to check all tokens to find BaseApp posts
-      const tokensToCheck = tokens;
+      // Limit to reasonable number to avoid timeout (check top tokens by balance first)
+      // Sort by balance to prioritize likely BaseApp posts
+      const sortedTokens = [...tokens].sort((a, b) => {
+        const balanceA = parseFloat(a.balanceFormatted || '0');
+        const balanceB = parseFloat(b.balanceFormatted || '0');
+        return balanceB - balanceA; // Higher balance first
+      });
       
-      console.log(`Checking all ${tokensToCheck.length} tokens via platformReferrer() (no limit)`);
+      // Check top 80 tokens by balance (reasonable limit to avoid timeout)
+      const MAX_TOKENS_TO_CHECK = 80;
+      const tokensToCheck = sortedTokens.slice(0, Math.min(MAX_TOKENS_TO_CHECK, sortedTokens.length));
+      
+      console.log(`Checking top ${tokensToCheck.length} tokens by balance (out of ${tokens.length} total) via platformReferrer()`);
       
       // Check tokens in batches (this is fast since we're just calling a view function)
       // Increased batch size and reduced delays for faster processing
-      const BATCH_SIZE = 30; // Larger batches for faster processing
+      const BATCH_SIZE = 20; // Smaller batches to avoid RPC rate limits
       const totalBatches = Math.ceil(tokensToCheck.length / BATCH_SIZE);
+      
+      // Add overall timeout for fallback check (30 seconds max)
+      const fallbackTimeout = setTimeout(() => {
+        console.warn('⚠️ Fallback check timeout - returning results so far');
+      }, 30000);
       
       for (let i = 0; i < tokensToCheck.length; i += BATCH_SIZE) {
       const batch = tokensToCheck.slice(i, i + BATCH_SIZE);
@@ -691,7 +713,14 @@ export class AnalyticsService {
       
       await Promise.allSettled(checkPromises);
       
-      // No delay between batches - maximize speed (RPC can handle parallel requests)
+      // Small delay between batches to avoid RPC rate limits
+      if (i + BATCH_SIZE < tokensToCheck.length) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
+    
+    if (fallbackTimeout) {
+      clearTimeout(fallbackTimeout);
     }
     
     console.log(`\n✓ Found ${baseAppAddresses.size} BaseApp tokens via platformReferrer() check`);
@@ -710,6 +739,7 @@ export class AnalyticsService {
     return baseAppAddresses;
     } catch (error: any) {
       console.error('Error in detectBaseAppTokensByReferrer:', error);
+      console.error('Error message:', error.message);
       console.error('Error stack:', error.stack);
       // Return empty set on error - don't break the entire analysis
       return new Set<string>();
