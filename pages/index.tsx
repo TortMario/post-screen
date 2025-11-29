@@ -423,7 +423,7 @@ BaseApp posts are tokens created on Base App platform. Make sure you're analyzin
         <div className="container mx-auto px-4 py-6">
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <a
-              href="https://donation-base.vercel.app/"
+              href="https://hubdonation-server.vercel.app/"
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-2 bg-gradient-to-r from-green-500/20 to-emerald-500/20 hover:from-green-500/30 hover:to-emerald-500/30 border border-green-500/50 text-green-300 font-semibold py-3 px-6 rounded-xl transition-all duration-200 hover:scale-105 hover:shadow-lg"
