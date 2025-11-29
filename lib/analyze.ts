@@ -132,34 +132,46 @@ export class AnalyticsService {
             } else {
               console.warn('⚠️ No BaseApp tokens found via platformReferrer() or pool check');
               
-              // FALLBACK 3: Try transaction-based detection
-              console.log('\n=== Fallback 3: Checking tokens via transaction patterns ===');
-              const transactionMatches = await this.detectBaseAppTokensByTransactions(tokensWithBalance, walletData);
-              
-              if (transactionMatches.size > 0) {
-                console.log(`✓ Found ${transactionMatches.size} BaseApp tokens via transaction patterns`);
-                baseAppTokenAddresses = transactionMatches;
-              } else {
-                // FALLBACK 4: Try name/symbol pattern matching (heuristic)
-                console.log('\n=== Fallback 4: Checking tokens via name/symbol patterns ===');
-                const patternMatches = this.detectBaseAppTokensByPatterns(tokensWithBalance);
+              try {
+                // FALLBACK 3: Try transaction-based detection
+                console.log('\n=== Fallback 3: Checking tokens via transaction patterns ===');
+                const transactionMatches = await this.detectBaseAppTokensByTransactions(tokensWithBalance, walletData);
                 
-                if (patternMatches.size > 0) {
-                  console.log(`✓ Found ${patternMatches.size} BaseApp tokens via name/symbol patterns`);
-                  baseAppTokenAddresses = patternMatches;
+                if (transactionMatches.size > 0) {
+                  console.log(`✓ Found ${transactionMatches.size} BaseApp tokens via transaction patterns`);
+                  baseAppTokenAddresses = transactionMatches;
                 } else {
-                  console.warn('⚠️ No BaseApp tokens found via any method');
-                  console.warn('Possible reasons:');
-                  console.warn('1. Tokens are not Base App tokens (not created via Base App)');
-                  console.warn('2. Tokens do not have platformReferrer() function (not Zora coins)');
-                  console.warn('3. Network/RPC issues preventing checks');
-                  console.warn('4. Tokens may be created via other platforms (Zora directly, not Base App)');
+                  // FALLBACK 4: Try name/symbol pattern matching (heuristic)
+                  console.log('\n=== Fallback 4: Checking tokens via name/symbol patterns ===');
+                  const patternMatches = this.detectBaseAppTokensByPatterns(tokensWithBalance);
                   
-                  return {
-                    wallet: walletData,
-                    portfolio: this.pnlCalculator.calculatePortfolioAnalytics([]),
-                  };
+                  if (patternMatches.size > 0) {
+                    console.log(`✓ Found ${patternMatches.size} BaseApp tokens via name/symbol patterns`);
+                    baseAppTokenAddresses = patternMatches;
+                  } else {
+                    console.warn('⚠️ No BaseApp tokens found via any method');
+                    console.warn('Possible reasons:');
+                    console.warn('1. Tokens are not Base App tokens (not created via Base App)');
+                    console.warn('2. Tokens do not have platformReferrer() function (not Zora coins)');
+                    console.warn('3. Network/RPC issues preventing checks');
+                    console.warn('4. Tokens may be created via other platforms (Zora directly, not Base App)');
+                    
+                    return {
+                      wallet: walletData,
+                      portfolio: this.pnlCalculator.calculatePortfolioAnalytics([]),
+                    };
+                  }
                 }
+              } catch (fallbackError: any) {
+                console.error('Transaction/pattern detection failed:', fallbackError);
+                console.error('Error message:', fallbackError.message);
+                console.error('Error stack:', fallbackError.stack);
+                console.warn('⚠️ Fallback methods failed, returning empty result');
+                
+                return {
+                  wallet: walletData,
+                  portfolio: this.pnlCalculator.calculatePortfolioAnalytics([]),
+                };
               }
             }
           } catch (poolError: any) {
@@ -170,10 +182,10 @@ export class AnalyticsService {
             console.warn('2. Tokens do not have platformReferrer() function (not Zora coins)');
             console.warn('3. Network/RPC issues preventing checks');
             
-            return {
-              wallet: walletData,
-              portfolio: this.pnlCalculator.calculatePortfolioAnalytics([]),
-            };
+      return {
+        wallet: walletData,
+        portfolio: this.pnlCalculator.calculatePortfolioAnalytics([]),
+      };
           }
         }
       } catch (referrerError: any) {
@@ -324,7 +336,7 @@ export class AnalyticsService {
     console.log(`Portfolio PnL: ${portfolio.totalPnLPct.toFixed(2)}%`);
 
     clearTimeout(analysisTimeout);
-    
+
     return {
       wallet: walletData,
       portfolio,
@@ -875,36 +887,48 @@ export class AnalyticsService {
   ): Promise<Set<string>> {
     const baseAppAddresses = new Set<string>();
     
-    if (tokens.length === 0 || walletData.transactions.length === 0) {
-      return baseAppAddresses;
-    }
+    try {
+      if (tokens.length === 0 || !walletData || !walletData.transactions || walletData.transactions.length === 0) {
+        return baseAppAddresses;
+      }
 
-    console.log(`Analyzing ${walletData.transactions.length} transactions for BaseApp patterns...`);
-    
-    // Look for token transfer transactions that might be BaseApp purchases
-    // BaseApp posts are typically bought via token transfers with ETH value
-    const tokenAddresses = new Set(tokens.map(t => t.tokenAddress.toLowerCase()));
-    
-    for (const tx of walletData.transactions) {
-      // Check if transaction is a token transfer to a token we have
-      if (tx.to && tokenAddresses.has(tx.to.toLowerCase())) {
-        // If transaction has ETH value, it might be a purchase
-        if (tx.value && BigInt(tx.value) > 0n) {
-          baseAppAddresses.add(tx.to.toLowerCase());
-          console.log(`  ✓ Found potential BaseApp token via transaction: ${tx.to.slice(0, 10)}... (tx: ${tx.hash.slice(0, 10)}...)`);
+      console.log(`Analyzing ${walletData.transactions.length} transactions for BaseApp patterns...`);
+      
+      // Look for token transfer transactions that might be BaseApp purchases
+      // BaseApp posts are typically bought via token transfers with ETH value
+      const tokenAddresses = new Set(tokens.map(t => t.tokenAddress.toLowerCase()));
+      
+      for (const tx of walletData.transactions) {
+        try {
+          // Check if transaction is a token transfer to a token we have
+          if (tx.to && tokenAddresses.has(tx.to.toLowerCase())) {
+            // If transaction has ETH value, it might be a purchase
+            if (tx.value && BigInt(tx.value) > 0n) {
+              baseAppAddresses.add(tx.to.toLowerCase());
+              console.log(`  ✓ Found potential BaseApp token via transaction: ${tx.to.slice(0, 10)}... (tx: ${tx.hash?.slice(0, 10) || 'unknown'}...)`);
+            }
+          }
+          
+          // Also check token transfers in the transaction data
+          // Look for ERC-20 transfer events that match our tokens
+          if (tx.tokenValue && tx.to && tokenAddresses.has(tx.to.toLowerCase())) {
+            baseAppAddresses.add(tx.to.toLowerCase());
+            console.log(`  ✓ Found potential BaseApp token via token transfer: ${tx.to.slice(0, 10)}...`);
+          }
+        } catch (txError: any) {
+          // Skip this transaction if it causes an error
+          console.warn(`  ⚠️ Error processing transaction ${tx.hash?.slice(0, 10) || 'unknown'}:`, txError.message);
         }
       }
       
-      // Also check token transfers in the transaction data
-      // Look for ERC-20 transfer events that match our tokens
-      if (tx.tokenValue && tx.to && tokenAddresses.has(tx.to.toLowerCase())) {
-        baseAppAddresses.add(tx.to.toLowerCase());
-        console.log(`  ✓ Found potential BaseApp token via token transfer: ${tx.to.slice(0, 10)}...`);
-      }
+      console.log(`Found ${baseAppAddresses.size} potential BaseApp tokens via transaction analysis`);
+      return baseAppAddresses;
+    } catch (error: any) {
+      console.error('Error in detectBaseAppTokensByTransactions:', error);
+      console.error('Error message:', error.message);
+      // Return empty set on error - don't break the entire analysis
+      return new Set<string>();
     }
-    
-    console.log(`Found ${baseAppAddresses.size} potential BaseApp tokens via transaction analysis`);
-    return baseAppAddresses;
   }
 
   /**
@@ -914,47 +938,68 @@ export class AnalyticsService {
   private detectBaseAppTokensByPatterns(tokens: TokenBalance[]): Set<string> {
     const baseAppAddresses = new Set<string>();
     
-    if (tokens.length === 0) {
-      return baseAppAddresses;
-    }
+    try {
+      if (!tokens || tokens.length === 0) {
+        return baseAppAddresses;
+      }
 
-    // Common BaseApp post patterns in names/symbols
-    const baseAppPatterns = [
-      /^gm\s*/i,           // Starts with "GM"
-      /^gn\s*/i,           // Starts with "GN"
-      /gm\s*@/i,           // Contains "GM @"
-      /gn\s*@/i,           // Contains "GN @"
-      /@base/i,            // Contains "@base"
-      /base\s*band/i,      // "Base Band"
-      /hey,?\s*why/i,      // "Hey, why..."
-      /no\s*gm/i,          // "No GM"
-      /gmonad/i,           // "GMonad"
-      /bitcoin\s*pls/i,    // "Bitcoin pls"
-      /levr/i,             // "levr"
-      /wobbles/i,          // "Wobbles"
-      /jesse/i,            // "Jesse"
-      /got\s*into/i,       // "Got into"
-    ];
+      // Common BaseApp post patterns in names/symbols
+      const baseAppPatterns = [
+        /^gm\s*/i,           // Starts with "GM"
+        /^gn\s*/i,           // Starts with "GN"
+        /gm\s*@/i,           // Contains "GM @"
+        /gn\s*@/i,           // Contains "GN @"
+        /@base/i,            // Contains "@base"
+        /base\s*band/i,      // "Base Band"
+        /hey,?\s*why/i,      // "Hey, why..."
+        /no\s*gm/i,          // "No GM"
+        /gmonad/i,           // "GMonad"
+        /bitcoin\s*pls/i,    // "Bitcoin pls"
+        /levr/i,             // "levr"
+        /wobbles/i,          // "Wobbles"
+        /jesse/i,            // "Jesse"
+        /got\s*into/i,       // "Got into"
+      ];
 
-    console.log(`Checking ${tokens.length} tokens for BaseApp name/symbol patterns...`);
-    
-    for (const token of tokens) {
-      const name = (token.name || '').toLowerCase();
-      const symbol = (token.symbol || '').toLowerCase();
-      const combined = `${name} ${symbol}`;
+      console.log(`Checking ${tokens.length} tokens for BaseApp name/symbol patterns...`);
       
-      // Check if name or symbol matches any BaseApp pattern
-      for (const pattern of baseAppPatterns) {
-        if (pattern.test(name) || pattern.test(symbol) || pattern.test(combined)) {
-          baseAppAddresses.add(token.tokenAddress.toLowerCase());
-          console.log(`  ✓ Pattern match: ${token.symbol || 'Unknown'} (${token.tokenAddress.slice(0, 10)}...) - matched pattern: ${pattern}`);
-          break; // Found a match, no need to check other patterns
+      for (const token of tokens) {
+        try {
+          if (!token || !token.tokenAddress) {
+            continue;
+          }
+          
+          const name = (token.name || '').toLowerCase();
+          const symbol = (token.symbol || '').toLowerCase();
+          const combined = `${name} ${symbol}`;
+          
+          // Check if name or symbol matches any BaseApp pattern
+          for (const pattern of baseAppPatterns) {
+            try {
+              if (pattern.test(name) || pattern.test(symbol) || pattern.test(combined)) {
+                baseAppAddresses.add(token.tokenAddress.toLowerCase());
+                console.log(`  ✓ Pattern match: ${token.symbol || 'Unknown'} (${token.tokenAddress.slice(0, 10)}...) - matched pattern`);
+                break; // Found a match, no need to check other patterns
+              }
+            } catch (patternError) {
+              // Skip this pattern if it causes an error
+              continue;
+            }
+          }
+        } catch (tokenError: any) {
+          // Skip this token if it causes an error
+          console.warn(`  ⚠️ Error processing token ${token.tokenAddress?.slice(0, 10) || 'unknown'}:`, tokenError.message);
         }
       }
+      
+      console.log(`Found ${baseAppAddresses.size} potential BaseApp tokens via pattern matching`);
+      return baseAppAddresses;
+    } catch (error: any) {
+      console.error('Error in detectBaseAppTokensByPatterns:', error);
+      console.error('Error message:', error.message);
+      // Return empty set on error - don't break the entire analysis
+      return new Set<string>();
     }
-    
-    console.log(`Found ${baseAppAddresses.size} potential BaseApp tokens via pattern matching`);
-    return baseAppAddresses;
   }
 
   private async findTokenTransactions(
